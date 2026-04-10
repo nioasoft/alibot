@@ -39,7 +39,7 @@
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 text-gray-400">{{ deal.id }}</td>
                 <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:50] }}</a></td>
-                <td class="px-4 py-3">{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}</td>
+                <td class="px-4 py-3">{% if deal.price %}{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% else %}—{% endif %}</td>
                 <td class="px-4 py-3">{{ deal.category }}</td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.source_group }}</td>
                 <td class="px-4 py-3">

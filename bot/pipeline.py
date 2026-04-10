@@ -136,10 +136,19 @@ class Pipeline:
             return None
 
         # Step 5: AI rewrite + categorize
+        # Determine price for rewriter (same logic as DB)
+        rewrite_price = None
+        rewrite_currency = parsed.currency
+        if ali_details and (ali_details.sale_price or ali_details.price):
+            rewrite_price = ali_details.sale_price or ali_details.price
+            rewrite_currency = ali_details.currency or "USD"
+        elif parsed.price:
+            rewrite_price = parsed.price
+
         rewrite_result = await self._rewriter.rewrite(
             product_name=ali_details.title if ali_details else parsed.raw_text[:100],
-            price=ali_details.sale_price or ali_details.price if ali_details else parsed.price,
-            currency=ali_details.currency if ali_details else parsed.currency,
+            price=rewrite_price,
+            currency=rewrite_currency,
             shipping=parsed.shipping,
             original_text=text,
             rating=ali_details.rating if ali_details else None,
@@ -157,16 +166,25 @@ class Pipeline:
                 logger.warning(f"Watermark failed, using original: {e}")
                 processed_images.append(img_bytes)
 
-        # Step 7: Save deal to DB
+        # Step 7: Determine best price (API > parsed > None)
+        final_price = None
+        final_currency = parsed.currency or "ILS"
+        if ali_details and (ali_details.sale_price or ali_details.price):
+            final_price = ali_details.sale_price or ali_details.price
+            final_currency = ali_details.currency or "USD"
+        elif parsed.price:
+            final_price = parsed.price
+
+        # Save deal to DB
         deal = Deal(
             raw_message_id=raw.id,
             product_id=product_id,
             product_name=rewrite_result.product_name_clean,
             original_text=text,
             rewritten_text=rewrite_result.rewritten_text,
-            price=(ali_details.sale_price or ali_details.price) if ali_details else (parsed.price or 0.0),
+            price=final_price or 0.0,
             original_price=parsed.original_price,
-            currency=(ali_details.currency if ali_details else parsed.currency) or "ILS",
+            currency=final_currency,
             shipping=parsed.shipping,
             category=rewrite_result.category,
             product_link=affiliate_link or parsed.link,

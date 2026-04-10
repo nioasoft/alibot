@@ -34,6 +34,8 @@ class PublishingConfig:
     max_posts_per_hour: int
     quiet_hours_start: int
     quiet_hours_end: int
+    hot_products_interval_hours: int = 4
+    hot_products_per_run: int = 3
 
 
 @dataclass(frozen=True)
@@ -129,6 +131,8 @@ def load_config(config_path: str) -> AppConfig:
             max_posts_per_hour=raw["publishing"]["max_posts_per_hour"],
             quiet_hours_start=raw["publishing"]["quiet_hours_start"],
             quiet_hours_end=raw["publishing"]["quiet_hours_end"],
+            hot_products_interval_hours=raw["publishing"].get("hot_products_interval_hours", 4),
+            hot_products_per_run=raw["publishing"].get("hot_products_per_run", 3),
         ),
         dedup=DedupConfig(
             window_hours=raw["dedup"]["window_hours"],

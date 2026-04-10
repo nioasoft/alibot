@@ -24,6 +24,7 @@ from bot.image_processor import ImageProcessor
 from bot.aliexpress_client import AliExpressClient
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
+from bot.hot_products import HotProductFetcher
 from bot.notifier import Notifier
 from bot.admin import AdminCommands
 from bot.listener import TelegramListener
@@ -175,11 +176,27 @@ async def main():
     )
     listener.register()
 
+    # Hot products fetcher
+    hot_fetcher = HotProductFetcher(
+        ali_api=ali_client,
+        rewriter=rewriter,
+        image_processor=image_processor,
+        session=session,
+        target_groups=config.telegram.target_groups,
+        channel_link=config.telegram.channel_link,
+        max_products_per_run=config.publishing.hot_products_per_run,
+    )
+
     # Scheduler
     scheduler = AsyncIOScheduler()
     scheduler.add_job(publisher.check_queue, IntervalTrigger(minutes=3), id="publisher")
     scheduler.add_job(notifier.send_daily_summary, CronTrigger(hour=21, minute=0), id="daily_summary")
     scheduler.add_job(dedup.cleanup_old, CronTrigger(hour=3, minute=0), id="dedup_cleanup")
+    scheduler.add_job(
+        hot_fetcher.fetch_and_queue,
+        IntervalTrigger(hours=config.publishing.hot_products_interval_hours),
+        id="hot_products",
+    )
     scheduler.start()
     logger.info("Scheduler started")
 

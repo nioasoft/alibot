@@ -127,6 +127,44 @@ class AliExpressClient:
             logger.error(f"Failed to get product details for {product_id}: {e}")
             return None
 
+    def search_products(
+        self,
+        keywords: str,
+        min_sale_price: int = 100,
+        max_sale_price: int = 5000,
+        page_size: int = 10,
+        sort: str = "SALE_PRICE_ASC",
+    ) -> list:
+        """Search for affiliate products by keyword.
+
+        Args:
+            keywords: Search keywords (e.g. 'bluetooth earbuds').
+            min_sale_price: Minimum price in cents (100 = $1).
+            max_sale_price: Maximum price in cents (5000 = $50).
+            page_size: Number of results to return (max 50).
+            sort: Sort order for results.
+
+        Returns:
+            List of product objects, empty list on failure or when disabled.
+        """
+        if not self.is_enabled:
+            return []
+
+        try:
+            result = self._api.get_products(
+                keywords=keywords,
+                min_sale_price=min_sale_price,
+                max_sale_price=max_sale_price,
+                page_size=page_size,
+                sort=sort,
+            )
+            if result and hasattr(result, "products") and result.products:
+                return result.products
+            return []
+        except Exception as e:
+            logger.error(f"Product search failed for '{keywords}': {e}")
+            return []
+
     def download_image(self, image_url: str) -> Optional[bytes]:
         """Download product image from AliExpress CDN.
 

@@ -24,6 +24,8 @@ publishing:
   max_posts_per_hour: 4
   quiet_hours_start: 23
   quiet_hours_end: 7
+  hot_products_interval_hours: 4
+  hot_products_per_run: 3
 
 dedup:
   window_hours: 24

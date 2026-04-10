@@ -37,6 +37,25 @@ SEARCH_QUERIES = [
     "sport accessories",
     "cleaning tools",
     "desk organizer",
+    "air fryer accessories",
+    "camping gear",
+    "phone holder car",
+    "mini projector",
+    "robot vacuum accessories",
+    "security camera",
+    "electric toothbrush",
+    "hair clipper",
+    "drone accessories",
+    "tablet stand",
+    "water bottle",
+    "travel accessories",
+]
+
+# Search strategies: rotate between different sort methods
+SEARCH_STRATEGIES = [
+    {"sort": "LAST_VOLUME_DESC", "name": "best_sellers"},      # Most popular
+    {"sort": "COMMISSION_RATE_DESC", "name": "high_commission"}, # Best commission
+    {"sort": "SALE_PRICE_ASC", "name": "cheapest_deals"},       # Cheapest (impulse buys)
 ]
 
 # Maps AliExpress top-level categories to our internal ones
@@ -89,6 +108,8 @@ class HotProductFetcher:
     async def fetch_and_queue(self) -> int:
         """Fetch hot products and add to publish queue.
 
+        Rotates between strategies: best sellers, high commission, cheapest deals.
+
         Returns:
             Number of products successfully queued.
         """
@@ -97,7 +118,8 @@ class HotProductFetcher:
             return 0
 
         query = random.choice(SEARCH_QUERIES)
-        logger.info(f"Fetching hot products for query: '{query}'")
+        strategy = random.choice(SEARCH_STRATEGIES)
+        logger.info(f"Fetching hot products: '{query}' strategy={strategy['name']}")
 
         try:
             products = self._api.search_products(
@@ -105,6 +127,7 @@ class HotProductFetcher:
                 min_sale_price=100,   # $1
                 max_sale_price=3000,  # $30
                 page_size=10,
+                sort=strategy["sort"],
             )
         except Exception as e:
             logger.error(f"Failed to fetch hot products: {e}")

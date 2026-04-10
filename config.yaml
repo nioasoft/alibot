@@ -1,0 +1,40 @@
+telegram:
+  source_groups:
+    - "@group1"
+    - "@group2"
+
+  target_groups:
+    default: "@my_deals_channel"
+
+  admin_chat: "me"
+
+openai:
+  model: "gpt-4o-mini"
+
+publishing:
+  min_delay_seconds: 300
+  max_delay_seconds: 600
+  max_posts_per_hour: 4
+  quiet_hours_start: 23
+  quiet_hours_end: 7
+
+dedup:
+  window_hours: 24
+  image_hash_threshold: 5
+
+watermark:
+  logo_path: "assets/logo.png"
+  position: "bottom-right"
+  opacity: 0.4
+  scale: 0.15
+
+parser:
+  min_message_length: 20
+  supported_domains:
+    - "aliexpress.com"
+    - "s.click.aliexpress.com"
+    - "a.aliexpress.com"
+
+dashboard:
+  port: 8080
+  auto_refresh_seconds: 30

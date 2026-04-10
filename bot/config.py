@@ -18,6 +18,7 @@ class TelegramConfig:
     source_groups: list[str]
     target_groups: dict[str, str]
     admin_chat: str
+    channel_link: str
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ def load_config(config_path: str) -> AppConfig:
             source_groups=raw["telegram"]["source_groups"],
             target_groups=raw["telegram"]["target_groups"],
             admin_chat=raw["telegram"]["admin_chat"],
+            channel_link=raw["telegram"].get("channel_link", ""),
         ),
         openai=OpenAIConfig(
             api_key=_require_env("OPENAI_API_KEY"),

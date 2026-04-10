@@ -8,6 +8,8 @@ telegram:
   target_groups:
     default: "@hadilimshelisrael"
 
+  channel_link: "https://t.me/hadilimshelisrael"
+
   admin_chat: "me"
 
 openai:

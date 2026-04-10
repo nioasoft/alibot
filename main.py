@@ -54,11 +54,16 @@ async def _send_deal(
     link: str,
     image_path: str | None = None,
     channel_link: str = "",
+    whatsapp_link: str = "",
 ) -> int:
     """Send deal to target group. Returns message ID."""
     footer = f"\n\n🛒 לרכישה: {link}"
-    if channel_link:
-        footer += f"\n\n📢 הצטרפו לערוץ: {channel_link}"
+    if channel_link or whatsapp_link:
+        footer += "\n\n📢 הצטרפו אלינו:"
+        if channel_link:
+            footer += f"\nטלגרם: {channel_link}"
+        if whatsapp_link:
+            footer += f"\nוואטסאפ: {whatsapp_link}"
     caption = f"{text}{footer}"
 
     if image_path:
@@ -153,7 +158,7 @@ async def main():
 
     # Publisher
     async def send_deal_wrapper(target_group: str, text: str, link: str, image_path=None) -> int:
-        return await _send_deal(client, target_group, text, link, image_path, config.telegram.channel_link)
+        return await _send_deal(client, target_group, text, link, image_path, config.telegram.channel_link, config.whatsapp.group_link)
 
     publisher = DealPublisher(
         send_func=send_deal_wrapper,

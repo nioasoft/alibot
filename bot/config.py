@@ -75,6 +75,7 @@ class AliExpressConfig:
 class WhatsAppConfig:
     service_url: str
     group_jid: str
+    group_link: str
 
 
 @dataclass(frozen=True)
@@ -167,5 +168,6 @@ def load_config(config_path: str) -> AppConfig:
         whatsapp=WhatsAppConfig(
             service_url=raw.get("whatsapp", {}).get("service_url", "http://localhost:3001"),
             group_jid=raw.get("whatsapp", {}).get("group_jid", ""),
+            group_link=raw.get("whatsapp", {}).get("group_link", ""),
         ),
     )

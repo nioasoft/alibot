@@ -9,7 +9,7 @@ import sys
 import uvicorn
 from dotenv import load_dotenv
 from loguru import logger
-from telethon import TelegramClient, Button
+from telethon import TelegramClient
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
@@ -56,8 +56,7 @@ async def _send_deal(
     channel_link: str = "",
 ) -> int:
     """Send deal to target group. Returns message ID."""
-    button = Button.url("🛒 לרכישה", link)
-    footer = "\n\n👇 לרכישה לחצו על הכפתור למטה"
+    footer = f"\n\n🛒 לרכישה: {link}"
     if channel_link:
         footer += f"\n\n📢 הצטרפו לערוץ: {channel_link}"
     caption = f"{text}{footer}"
@@ -67,14 +66,12 @@ async def _send_deal(
             target_group,
             image_path,
             caption=caption,
-            buttons=[button],
             link_preview=False,
         )
     else:
         msg = await client.send_message(
             target_group,
             caption,
-            buttons=[button],
             link_preview=False,
         )
     return msg.id

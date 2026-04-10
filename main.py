@@ -21,6 +21,7 @@ from bot.dedup import DuplicateChecker
 from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
 from bot.image_processor import ImageProcessor
+from bot.aliexpress_client import AliExpressClient
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
 from bot.notifier import Notifier
@@ -119,6 +120,13 @@ async def main():
         scale=config.watermark.scale,
     )
 
+    # AliExpress API client
+    ali_client = AliExpressClient(
+        app_key=config.aliexpress.app_key,
+        app_secret=config.aliexpress.app_secret,
+        tracking_id=config.aliexpress.tracking_id,
+    )
+
     # Pipeline
     pipeline = Pipeline(
         parser=parser,
@@ -129,6 +137,7 @@ async def main():
         session=session,
         target_groups=config.telegram.target_groups,
         notifier=notifier,
+        aliexpress_client=ali_client,
     )
 
     # Publisher

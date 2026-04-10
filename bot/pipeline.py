@@ -16,6 +16,7 @@ from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
 from bot.image_processor import ImageProcessor, compute_image_hash
 from bot.models import RawMessage, Deal, PublishQueueItem, DailyStat
+from bot.aliexpress_client import AliExpressClient
 
 
 class Pipeline:
@@ -30,6 +31,7 @@ class Pipeline:
         target_groups: dict[str, str],
         notifier: object,
         image_dir: str = "data/images",
+        aliexpress_client: Optional[AliExpressClient] = None,
     ):
         self._parser = parser
         self._dedup = dedup
@@ -40,6 +42,7 @@ class Pipeline:
         self._target_groups = target_groups
         self._notifier = notifier
         self._image_dir = Path(image_dir)
+        self._ali_client = aliexpress_client
 
     async def process(
         self,
@@ -95,6 +98,20 @@ class Pipeline:
         if product_id is None:
             product_id = await self._resolver.resolve(parsed.link)
 
+        # Step 2.5: Enrich from AliExpress API
+        ali_details = None
+        affiliate_link = None
+        if self._ali_client and self._ali_client.is_enabled and product_id:
+            ali_details = self._ali_client.get_product_details(product_id)
+            affiliate_link = self._ali_client.get_affiliate_link(parsed.link)
+            self._increment_stat("api_calls")
+
+            # Use HD images from API if available
+            if ali_details and ali_details.images:
+                api_image = self._ali_client.download_image(ali_details.images[0])
+                if api_image:
+                    images = [api_image]  # Replace source images with HD API image
+
         # Step 3: Compute hashes
         text_hash = hashlib.md5(
             (parsed.raw_text or "").lower().strip().encode()
@@ -119,11 +136,13 @@ class Pipeline:
 
         # Step 5: AI rewrite + categorize
         rewrite_result = await self._rewriter.rewrite(
-            product_name=parsed.raw_text[:100],
-            price=parsed.price,
-            currency=parsed.currency,
+            product_name=ali_details.title if ali_details else parsed.raw_text[:100],
+            price=ali_details.sale_price or ali_details.price if ali_details else parsed.price,
+            currency=ali_details.currency if ali_details else parsed.currency,
             shipping=parsed.shipping,
             original_text=text,
+            rating=ali_details.rating if ali_details else None,
+            sales_count=ali_details.orders_count if ali_details else None,
         )
 
         # Step 6: Process images (watermark)
@@ -143,12 +162,12 @@ class Pipeline:
             product_name=rewrite_result.product_name_clean,
             original_text=text,
             rewritten_text=rewrite_result.rewritten_text,
-            price=parsed.price or 0.0,
+            price=(ali_details.sale_price or ali_details.price) if ali_details else (parsed.price or 0.0),
             original_price=parsed.original_price,
-            currency=parsed.currency or "ILS",
+            currency=(ali_details.currency if ali_details else parsed.currency) or "ILS",
             shipping=parsed.shipping,
             category=rewrite_result.category,
-            product_link=parsed.link,
+            product_link=affiliate_link or parsed.link,
             image_hash=image_hash,
             text_hash=text_hash,
             source_group=source_group,

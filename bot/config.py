@@ -62,6 +62,13 @@ class DashboardConfig:
 
 
 @dataclass(frozen=True)
+class AliExpressConfig:
+    app_key: str
+    app_secret: str
+    tracking_id: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     telegram: TelegramConfig
     openai: OpenAIConfig
@@ -70,6 +77,7 @@ class AppConfig:
     watermark: WatermarkConfig
     parser: ParserConfig
     dashboard: DashboardConfig
+    aliexpress: AliExpressConfig
 
 
 def _require_env(name: str) -> str:
@@ -137,5 +145,10 @@ def load_config(config_path: str) -> AppConfig:
         dashboard=DashboardConfig(
             port=raw["dashboard"]["port"],
             auto_refresh_seconds=raw["dashboard"]["auto_refresh_seconds"],
+        ),
+        aliexpress=AliExpressConfig(
+            app_key=os.environ.get("ALIEXPRESS_APP_KEY", ""),
+            app_secret=os.environ.get("ALIEXPRESS_APP_SECRET", ""),
+            tracking_id=os.environ.get("ALIEXPRESS_TRACKING_ID", ""),
         ),
     )

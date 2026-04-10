@@ -56,7 +56,7 @@ async def _send_deal(
 ) -> int:
     """Send deal to target group. Returns message ID."""
     button = Button.url("🛒 לרכישה", link)
-    footer = "\n\n👇 לרכישה לחצו למטה"
+    footer = "\n\n👇 לרכישה לחצו על הכפתור למטה"
     if channel_link:
         footer += f"\n\n📢 הצטרפו לערוץ: {channel_link}"
     caption = f"{text}{footer}"
@@ -67,12 +67,14 @@ async def _send_deal(
             image_path,
             caption=caption,
             buttons=[button],
+            link_preview=False,
         )
     else:
         msg = await client.send_message(
             target_group,
             caption,
             buttons=[button],
+            link_preview=False,
         )
     return msg.id
 

@@ -14,6 +14,16 @@ except ImportError:
     HAS_ALI_API = False
 
 
+def _safe_float(value) -> Optional[float]:
+    """Parse float from API values like '96.2%' or '7.0'."""
+    if not value:
+        return None
+    try:
+        return float(str(value).rstrip("%"))
+    except (ValueError, TypeError):
+        return None
+
+
 @dataclass
 class ProductDetails:
     title: str
@@ -118,9 +128,9 @@ class AliExpressClient:
                 sale_price=float(getattr(p, "target_sale_price", 0) or 0) or None,
                 currency=getattr(p, "target_original_price_currency", "ILS"),
                 images=images,
-                rating=float(getattr(p, "evaluate_rate", 0) or 0) or None,
+                rating=_safe_float(getattr(p, "evaluate_rate", 0)),
                 orders_count=int(getattr(p, "lastest_volume", 0) or 0) or None,
-                commission_rate=float(getattr(p, "commission_rate", 0) or 0) or None,
+                commission_rate=_safe_float(getattr(p, "commission_rate", 0)),
                 category=getattr(p, "first_level_category_name", None),
             )
         except Exception as e:

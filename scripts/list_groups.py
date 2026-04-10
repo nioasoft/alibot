@@ -2,6 +2,8 @@
 
 import asyncio
 from dotenv import load_dotenv
+import sys
+sys.path.insert(0, ".")
 from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat
 from bot.config import load_config
@@ -32,7 +34,6 @@ async def main():
             print(f"  {kind:6} | {username:25} | {dialog.name[:40]:40} | {members} members")
 
     print("\n" + "=" * 60)
-    print("Done!")
 
 
 asyncio.run(main())

@@ -70,9 +70,14 @@ class AliExpressClient:
         try:
             links = self._api.get_affiliate_links(product_url)
             if links and len(links) > 0:
-                link = links[0].promotion_link
-                logger.debug(f"Affiliate link generated: {link[:50]}...")
-                return link
+                result = links[0]
+                promo = getattr(result, "promotion_link", None)
+                if promo:
+                    logger.debug(f"Affiliate link generated: {str(promo)[:50]}...")
+                    return str(promo)
+                msg = getattr(result, "message", "unknown reason")
+                logger.warning(f"No affiliate link for {product_url}: {msg}")
+                return None
             logger.warning(f"No affiliate link returned for: {product_url}")
             return None
         except Exception as e:

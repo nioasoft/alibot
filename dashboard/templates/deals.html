@@ -48,7 +48,7 @@
                     {% elif status == "failed" %}<span class="text-red-600">❌</span>
                     {% else %}<span class="text-gray-400">—</span>{% endif %}
                 </td>
-                <td class="px-4 py-3 text-gray-500">{{ deal.created_at.strftime("%d/%m %H:%M") }}</td>
+                <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localdatetime }}</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -178,7 +178,10 @@ class HotProductFetcher:
         original_price = float(getattr(product, "target_original_price", 0) or 0)
         commission = str(getattr(product, "commission_rate", "") or "")
         orders = int(getattr(product, "lastest_volume", 0) or 0)
-        promo_link = str(getattr(product, "promotion_link", "") or "")
+        # get_products returns very long promotion_links (800+ chars)
+        # Use get_affiliate_links instead for short URLs
+        product_url = f"https://www.aliexpress.com/item/{product_id}.html"
+        promo_link = self._api.get_affiliate_link(product_url) or str(getattr(product, "promotion_link", "") or "")
         image_url = str(getattr(product, "product_main_image_url", "") or "")
         category = str(getattr(product, "first_level_category_name", "") or "other")
         discount = str(getattr(product, "discount", "") or "")

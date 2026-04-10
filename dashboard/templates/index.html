@@ -48,7 +48,7 @@
                     {% elif status == "queued" %}<span class="text-blue-600">⏳ בתור</span>
                     {% else %}<span class="text-gray-500">{{ status }}</span>{% endif %}
                 </td>
-                <td class="px-4 py-3 text-gray-500">{{ deal.created_at.strftime("%H:%M") }}</td>
+                <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localtime }}</td>
             </tr>
             {% endfor %}
         </tbody>

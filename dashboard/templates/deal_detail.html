@@ -12,7 +12,7 @@
             <div><dt class="text-gray-500">משלוח</dt><dd>{{ deal.shipping or "—" }}</dd></div>
             <div><dt class="text-gray-500">מקור</dt><dd>{{ deal.source_group }}</dd></div>
             <div><dt class="text-gray-500">לינק</dt><dd><a href="{{ deal.product_link }}" target="_blank" class="text-blue-600 hover:underline break-all">{{ deal.product_link[:60] }}...</a></dd></div>
-            <div><dt class="text-gray-500">זמן יצירה</dt><dd>{{ deal.created_at.strftime("%d/%m/%Y %H:%M") }}</dd></div>
+            <div><dt class="text-gray-500">זמן יצירה</dt><dd>{{ deal.created_at | localdatetime }}</dd></div>
         </dl>
     </div>
     <div class="space-y-4">
@@ -32,7 +32,7 @@
     <div class="text-sm space-y-1">
         <div>סטטוס: <strong>{{ queue_item.status }}</strong></div>
         <div>קבוצת יעד: {{ queue_item.target_group }}</div>
-        {% if queue_item.published_at %}<div>פורסם: {{ queue_item.published_at.strftime("%d/%m/%Y %H:%M") }}</div>{% endif %}
+        {% if queue_item.published_at %}<div>פורסם: {{ queue_item.published_at | localdatetime }}</div>{% endif %}
         {% if queue_item.error_message %}<div class="text-red-600">שגיאה: {{ queue_item.error_message }}</div>{% endif %}
     </div>
 </div>

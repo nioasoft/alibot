@@ -27,6 +27,8 @@ class DealPublisher:
         quiet_hours_start: int,
         quiet_hours_end: int,
         whatsapp_publisher: Optional["WhatsAppPublisher"] = None,
+        channel_link: str = "",
+        whatsapp_link: str = "",
     ):
         self._send = send_func
         self._session = session
@@ -36,6 +38,8 @@ class DealPublisher:
         self._quiet_start = quiet_hours_start
         self._quiet_end = quiet_hours_end
         self._whatsapp = whatsapp_publisher
+        self._channel_link = channel_link
+        self._whatsapp_link = whatsapp_link
         self.paused = False
 
     def pick_next(self) -> Optional[PublishQueueItem]:
@@ -101,7 +105,14 @@ class DealPublisher:
 
             # Also send to WhatsApp if enabled
             if self._whatsapp and self._whatsapp.is_enabled:
-                wa_text = f"{deal.rewritten_text}\n\n🛒 לרכישה: {deal.affiliate_link or deal.product_link}"
+                link = deal.affiliate_link or deal.product_link
+                wa_text = f"{deal.rewritten_text}\n\n🛒 לרכישה: {link}"
+                if self._channel_link or self._whatsapp_link:
+                    wa_text += "\n\n📢 הצטרפו אלינו:"
+                    if self._channel_link:
+                        wa_text += f"\nטלגרם: {self._channel_link}"
+                    if self._whatsapp_link:
+                        wa_text += f"\nוואטסאפ: {self._whatsapp_link}"
                 await self._whatsapp.send_deal(
                     text=wa_text,
                     image_path=deal.image_path,

@@ -173,6 +173,8 @@ async def main():
         quiet_hours_start=config.publishing.quiet_hours_start,
         quiet_hours_end=config.publishing.quiet_hours_end,
         whatsapp_publisher=wa_publisher,
+        channel_link=config.telegram.channel_link,
+        whatsapp_link=config.whatsapp.group_link,
     )
 
     # Admin

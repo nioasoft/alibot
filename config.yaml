@@ -54,4 +54,4 @@ aliexpress:
 
 whatsapp:
   service_url: "http://localhost:3001"
-  group_jid: ""  # Set after first WhatsApp connection, GET /groups to find it
+  group_jid: "120363426624009388@g.us"  # הדילים של ישראל 1

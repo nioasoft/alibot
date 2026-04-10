@@ -4,6 +4,7 @@ import multer from 'multer';
 import { readFile } from 'fs/promises';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
+import QRCode from 'qrcode';
 
 const PORT = process.env.WA_PORT || 3001;
 const GROUP_JID = process.env.WA_GROUP_JID || ''; // Set after first connection
@@ -43,6 +44,11 @@ async function connectWhatsApp() {
         if (qr) {
             console.log('\n📱 Scan QR code with WhatsApp on your dedicated phone:\n');
             qrcode.generate(qr, { small: true });
+            // Also save as image
+            const qrPath = './whatsapp/qr_code.png';
+            QRCode.toFile(qrPath, qr, { width: 400 }, (err) => {
+                if (!err) console.log(`📸 QR saved to: ${qrPath}`);
+            });
         }
 
         if (connection === 'open') {

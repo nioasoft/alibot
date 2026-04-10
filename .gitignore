@@ -14,3 +14,5 @@ dist/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+data/bot.log
+data/*.db-journal

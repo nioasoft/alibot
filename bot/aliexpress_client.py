@@ -36,7 +36,7 @@ class AliExpressClient:
                 app_key,
                 app_secret,
                 ali_models.Language.EN,
-                ali_models.Currency.ILS,
+                ali_models.Currency.USD,
                 tracking_id,
             )
             logger.info("AliExpress API client initialized")

@@ -13,6 +13,7 @@ from loguru import logger
 from bot.parser import DealParser, ParsedDeal
 from bot.dedup import DuplicateChecker
 from bot.resolver import LinkResolver
+from bot.exchange_rate import get_cached_rate
 from bot.rewriter import ContentRewriter
 from bot.image_processor import ImageProcessor, compute_image_hash
 from bot.models import RawMessage, Deal, PublishQueueItem, DailyStat
@@ -143,6 +144,7 @@ class Pipeline:
             original_text=text,
             rating=ali_details.rating if ali_details else None,
             sales_count=ali_details.orders_count if ali_details else None,
+            usd_ils_rate=get_cached_rate(),
         )
 
         # Step 6: Process images (watermark)

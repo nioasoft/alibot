@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
+from bot.exchange_rate import get_cached_rate
 from loguru import logger
 from sqlalchemy.orm import Session
 
@@ -208,6 +209,7 @@ class HotProductFetcher:
             original_text=original_text,
             rating=None,
             sales_count=orders,
+            usd_ils_rate=get_cached_rate(),
         )
 
         # Download and watermark image

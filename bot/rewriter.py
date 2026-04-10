@@ -19,7 +19,8 @@ _SYSTEM_PROMPT = """אתה כותב תוכן לערוץ דילים בטלגרם.
 - סגנון מושך ומזמין לרכישה
 - אורך: 3-5 שורות קצרות (מקסימום 400 תווים)
 - כתוב בעברית בלבד
-- אל תכלול לינקים בטקסט! הלינק לרכישה מופיע ככפתור מתחת להודעה
+- אל תכלול לינקים בטקסט! הלינק לרכישה מופיע מתחת להודעה
+- אם קיבלת מחיר בדולר ושער דולר, ציין את המחיר גם בדולר וגם בשקלים. לדוגמה: "$2.99 (כ-₪9.15)"
 
 לקיטלוג, בחר קטגוריה אחת מ:
 tech, home, fashion, beauty, toys, sports, auto, other
@@ -49,9 +50,10 @@ class ContentRewriter:
         shipping: Optional[str] = None,
         rating: Optional[float] = None,
         sales_count: Optional[int] = None,
+        usd_ils_rate: Optional[float] = None,
     ) -> RewriteResult:
         user_prompt = self._build_user_prompt(
-            product_name, price, currency, shipping, rating, sales_count, original_text
+            product_name, price, currency, shipping, rating, sales_count, original_text, usd_ils_rate
         )
 
         try:
@@ -77,10 +79,10 @@ class ContentRewriter:
 
         except (json.JSONDecodeError, KeyError) as e:
             logger.warning(f"Failed to parse AI response: {e}")
-            return self._fallback(product_name, price, currency)
+            return self._fallback(product_name, price, currency, usd_ils_rate)
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
-            return self._fallback(product_name, price, currency)
+            return self._fallback(product_name, price, currency, usd_ils_rate)
 
     def _build_user_prompt(
         self,
@@ -91,11 +93,15 @@ class ContentRewriter:
         rating: Optional[float],
         sales_count: Optional[int],
         original_text: str,
+        usd_ils_rate: Optional[float] = None,
     ) -> str:
         parts = [f"מוצר: {product_name}"]
         if price and currency:
             symbol = "₪" if currency == "ILS" else "$"
             parts.append(f"מחיר: {symbol}{price}")
+            if currency == "USD" and usd_ils_rate:
+                ils_price = round(price * usd_ils_rate, 2)
+                parts.append(f"מחיר בשקלים: ₪{ils_price} (שער: {usd_ils_rate})")
         if shipping:
             parts.append(f"משלוח: {shipping}")
         if rating:
@@ -110,12 +116,17 @@ class ContentRewriter:
         product_name: str,
         price: Optional[float],
         currency: Optional[str],
+        usd_ils_rate: Optional[float] = None,
     ) -> RewriteResult:
         """Template-based fallback when AI fails."""
         price_str = ""
         if price and currency:
-            symbol = "₪" if currency == "ILS" else "$"
-            price_str = f"\n💰 מחיר: {symbol}{price}"
+            if currency == "USD" and usd_ils_rate:
+                ils_price = round(price * usd_ils_rate, 2)
+                price_str = f"\n💰 מחיר: ${price} (כ-₪{ils_price})"
+            else:
+                symbol = "₪" if currency == "ILS" else "$"
+                price_str = f"\n💰 מחיר: {symbol}{price}"
 
         text = f"🔥 {product_name}{price_str}\n👉 לפרטים נוספים לחצו על הלינק"
         return RewriteResult(

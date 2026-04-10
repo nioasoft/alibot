@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
 
 from bot.config import load_config, AppConfig
+from bot.exchange_rate import fetch_usd_ils_rate
 from bot.models import init_db, Deal
 from bot.parser import DealParser
 from bot.dedup import DuplicateChecker
@@ -207,9 +208,12 @@ async def main():
 
     # Scheduler
     scheduler = AsyncIOScheduler()
+    # Fetch exchange rate on startup and daily at 8:00
+    await fetch_usd_ils_rate()
     scheduler.add_job(publisher.check_queue, IntervalTrigger(minutes=3), id="publisher")
     scheduler.add_job(notifier.send_daily_summary, CronTrigger(hour=21, minute=0), id="daily_summary")
     scheduler.add_job(dedup.cleanup_old, CronTrigger(hour=3, minute=0), id="dedup_cleanup")
+    scheduler.add_job(fetch_usd_ils_rate, CronTrigger(hour=8, minute=0), id="exchange_rate")
     scheduler.add_job(
         hot_fetcher.fetch_and_queue,
         IntervalTrigger(hours=config.publishing.hot_products_interval_hours),

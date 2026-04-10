@@ -23,7 +23,15 @@ def register_routes(app: FastAPI) -> None:
             today = datetime.date.today()
             stats = session.query(DailyStat).filter_by(date=today).first()
             if stats is None:
-                stats = DailyStat(date=today)
+                stats = DailyStat(
+                    date=today,
+                    deals_seen=0,
+                    deals_processed=0,
+                    deals_published=0,
+                    deals_skipped_dup=0,
+                    deals_skipped_error=0,
+                    api_calls=0,
+                )
 
             queue_count = session.execute(
                 select(func.count())
@@ -38,13 +46,14 @@ def register_routes(app: FastAPI) -> None:
                 .limit(20)
             ).all()
 
-            return templates.TemplateResponse("index.html", {
-                "request": request,
-                "stats": stats,
-                "queue_count": queue_count,
-                "recent_deals": recent_rows,
-                "auto_refresh": config.dashboard.auto_refresh_seconds,
-            })
+            return templates.TemplateResponse(
+                request, "index.html", {
+                    "stats": stats,
+                    "queue_count": queue_count,
+                    "recent_deals": recent_rows,
+                    "auto_refresh": config.dashboard.auto_refresh_seconds,
+                },
+            )
         finally:
             session.close()
 
@@ -72,13 +81,14 @@ def register_routes(app: FastAPI) -> None:
                 ).all()
             ]
 
-            return templates.TemplateResponse("deals.html", {
-                "request": request,
-                "deals": deals,
-                "categories": categories,
-                "filter_status": status,
-                "filter_category": category,
-            })
+            return templates.TemplateResponse(
+                request, "deals.html", {
+                    "deals": deals,
+                    "categories": categories,
+                    "filter_status": status,
+                    "filter_category": category,
+                },
+            )
         finally:
             session.close()
 
@@ -90,12 +100,17 @@ def register_routes(app: FastAPI) -> None:
         try:
             deal = session.get(Deal, deal_id)
             if deal is None:
-                return templates.TemplateResponse("index.html", {
-                    "request": request,
-                    "stats": DailyStat(date=datetime.date.today()),
-                    "queue_count": 0,
-                    "recent_deals": [],
-                }, status_code=404)
+                return templates.TemplateResponse(
+                    request, "index.html", {
+                        "stats": DailyStat(
+                            date=datetime.date.today(),
+                            deals_seen=0, deals_processed=0, deals_published=0,
+                            deals_skipped_dup=0, deals_skipped_error=0, api_calls=0,
+                        ),
+                        "queue_count": 0,
+                        "recent_deals": [],
+                    }, status_code=404,
+                )
 
             queue_item = session.execute(
                 select(PublishQueueItem)
@@ -103,11 +118,12 @@ def register_routes(app: FastAPI) -> None:
                 .limit(1)
             ).scalar_one_or_none()
 
-            return templates.TemplateResponse("deal_detail.html", {
-                "request": request,
-                "deal": deal,
-                "queue_item": queue_item,
-            })
+            return templates.TemplateResponse(
+                request, "deal_detail.html", {
+                    "deal": deal,
+                    "queue_item": queue_item,
+                },
+            )
         finally:
             session.close()
 
@@ -127,10 +143,9 @@ def register_routes(app: FastAPI) -> None:
                 )
             ).all()
 
-            return templates.TemplateResponse("queue.html", {
-                "request": request,
-                "items": items,
-            })
+            return templates.TemplateResponse(
+                request, "queue.html", {"items": items},
+            )
         finally:
             session.close()
 
@@ -163,10 +178,9 @@ def register_routes(app: FastAPI) -> None:
     async def settings_page(request: Request):
         templates = app.state.templates
         config = app.state.config
-        return templates.TemplateResponse("settings.html", {
-            "request": request,
-            "config": config,
-        })
+        return templates.TemplateResponse(
+            request, "settings.html", {"config": config},
+        )
 
     @app.get("/logs")
     async def logs_page(request: Request):
@@ -179,7 +193,6 @@ def register_routes(app: FastAPI) -> None:
                 log_content = "".join(lines[-100:])
         except FileNotFoundError:
             log_content = "No log file found yet."
-        return templates.TemplateResponse("logs.html", {
-            "request": request,
-            "log_content": log_content,
-        })
+        return templates.TemplateResponse(
+            request, "logs.html", {"log_content": log_content},
+        )

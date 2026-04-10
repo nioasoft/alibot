@@ -24,6 +24,7 @@ from bot.image_processor import ImageProcessor
 from bot.aliexpress_client import AliExpressClient
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
+from bot.whatsapp_publisher import WhatsAppPublisher
 from bot.hot_products import HotProductFetcher
 from bot.notifier import Notifier
 from bot.admin import AdminCommands
@@ -147,6 +148,12 @@ async def main():
         aliexpress_client=ali_client,
     )
 
+    # WhatsApp publisher
+    wa_publisher = WhatsAppPublisher(
+        base_url=config.whatsapp.service_url,
+        group_jid=config.whatsapp.group_jid,
+    )
+
     # Publisher
     async def send_deal_wrapper(target_group: str, text: str, link: str, image_path=None) -> int:
         return await _send_deal(client, target_group, text, link, image_path, config.telegram.channel_link)
@@ -159,6 +166,7 @@ async def main():
         max_posts_per_hour=config.publishing.max_posts_per_hour,
         quiet_hours_start=config.publishing.quiet_hours_start,
         quiet_hours_end=config.publishing.quiet_hours_end,
+        whatsapp_publisher=wa_publisher,
     )
 
     # Admin

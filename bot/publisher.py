@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import datetime
 import random
-from typing import Callable, Awaitable, Optional
+from typing import TYPE_CHECKING, Callable, Awaitable, Optional
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from loguru import logger
 
 from bot.models import Deal, PublishQueueItem, DailyStat
+
+if TYPE_CHECKING:
+    from bot.whatsapp_publisher import WhatsAppPublisher
 
 
 class DealPublisher:
@@ -23,6 +26,7 @@ class DealPublisher:
         max_posts_per_hour: int,
         quiet_hours_start: int,
         quiet_hours_end: int,
+        whatsapp_publisher: Optional["WhatsAppPublisher"] = None,
     ):
         self._send = send_func
         self._session = session
@@ -31,6 +35,7 @@ class DealPublisher:
         self._max_posts_per_hour = max_posts_per_hour
         self._quiet_start = quiet_hours_start
         self._quiet_end = quiet_hours_end
+        self._whatsapp = whatsapp_publisher
         self.paused = False
 
     def pick_next(self) -> Optional[PublishQueueItem]:
@@ -93,6 +98,14 @@ class DealPublisher:
 
             self._increment_stat("deals_published")
             logger.info(f"Published deal {deal.id} to {queue_item.target_group}")
+
+            # Also send to WhatsApp if enabled
+            if self._whatsapp and self._whatsapp.is_enabled:
+                wa_text = f"{deal.rewritten_text}\n\n🛒 לרכישה: {deal.affiliate_link or deal.product_link}"
+                await self._whatsapp.send_deal(
+                    text=wa_text,
+                    image_path=deal.image_path,
+                )
 
         except Exception as e:
             queue_item.status = "failed"

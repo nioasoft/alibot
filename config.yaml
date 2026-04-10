@@ -51,3 +51,7 @@ dashboard:
 aliexpress:
   # Configured via environment variables
   # ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET, ALIEXPRESS_TRACKING_ID
+
+whatsapp:
+  service_url: "http://localhost:3001"
+  group_jid: ""  # Set after first WhatsApp connection, GET /groups to find it

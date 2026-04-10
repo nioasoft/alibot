@@ -72,6 +72,12 @@ class AliExpressConfig:
 
 
 @dataclass(frozen=True)
+class WhatsAppConfig:
+    service_url: str
+    group_jid: str
+
+
+@dataclass(frozen=True)
 class AppConfig:
     telegram: TelegramConfig
     openai: OpenAIConfig
@@ -81,6 +87,7 @@ class AppConfig:
     parser: ParserConfig
     dashboard: DashboardConfig
     aliexpress: AliExpressConfig
+    whatsapp: WhatsAppConfig
 
 
 def _require_env(name: str) -> str:
@@ -156,5 +163,9 @@ def load_config(config_path: str) -> AppConfig:
             app_key=os.environ.get("ALIEXPRESS_APP_KEY", ""),
             app_secret=os.environ.get("ALIEXPRESS_APP_SECRET", ""),
             tracking_id=os.environ.get("ALIEXPRESS_TRACKING_ID", ""),
+        ),
+        whatsapp=WhatsAppConfig(
+            service_url=raw.get("whatsapp", {}).get("service_url", "http://localhost:3001"),
+            group_jid=raw.get("whatsapp", {}).get("group_jid", ""),
         ),
     )

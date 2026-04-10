@@ -64,6 +64,10 @@ async def _send_deal(
             footer += f"\nטלגרם: {channel_link}"
         if whatsapp_link:
             footer += f"\nוואטסאפ: {whatsapp_link}"
+    # Telegram caption limit: 1024 chars for images
+    max_text_len = 1024 - len(footer) - 5
+    if len(text) > max_text_len:
+        text = text[:max_text_len] + "..."
     caption = f"{text}{footer}"
 
     if image_path:

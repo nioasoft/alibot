@@ -3,6 +3,7 @@ import express from 'express';
 import multer from 'multer';
 import { readFile } from 'fs/promises';
 import pino from 'pino';
+import qrcode from 'qrcode-terminal';
 
 const PORT = process.env.WA_PORT || 3001;
 const GROUP_JID = process.env.WA_GROUP_JID || ''; // Set after first connection
@@ -27,7 +28,7 @@ async function connectWhatsApp() {
         version,
         auth: state,
         logger,
-        printQRInTerminal: true,
+        // QR handled manually via connection.update event
         browser: ['AliBot', 'Chrome', '120.0.0'],
         connectTimeoutMs: 60000,
         // Anti-ban: mimic real browser behavior
@@ -41,6 +42,7 @@ async function connectWhatsApp() {
     sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
         if (qr) {
             console.log('\n📱 Scan QR code with WhatsApp on your dedicated phone:\n');
+            qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'open') {

@@ -21,7 +21,7 @@ openai:
 publishing:
   min_delay_seconds: 300
   max_delay_seconds: 600
-  max_posts_per_hour: 4
+  max_posts_per_hour: 999
   quiet_hours_start: 23
   quiet_hours_end: 7
   hot_products_interval_hours: 4

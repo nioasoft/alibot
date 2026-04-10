@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}AliBot — תור פרסום{% endblock %}
+{% block content %}
+<h2 class="text-lg font-semibold mb-4">תור פרסום ({{ items | length }} דילים)</h2>
+<div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-right">דיל</th>
+                <th class="px-4 py-3 text-right">מוצר</th>
+                <th class="px-4 py-3 text-right">יעד</th>
+                <th class="px-4 py-3 text-right">עדיפות</th>
+                <th class="px-4 py-3 text-right">מתוזמן אחרי</th>
+                <th class="px-4 py-3 text-right">פעולות</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for qi, deal in items %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3 text-gray-400">#{{ deal.id }}</td>
+                <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:40] }}</a></td>
+                <td class="px-4 py-3">{{ qi.target_group }}</td>
+                <td class="px-4 py-3">{{ qi.priority }}</td>
+                <td class="px-4 py-3 text-gray-500">{{ qi.scheduled_after.strftime("%H:%M") }}</td>
+                <td class="px-4 py-3 flex gap-2">
+                    <form method="post" action="/queue/{{ qi.id }}/skip" class="inline">
+                        <button type="submit" class="text-red-600 hover:underline text-xs">דלג</button>
+                    </form>
+                    <form method="post" action="/queue/{{ qi.id }}/promote" class="inline">
+                        <button type="submit" class="text-green-600 hover:underline text-xs">קדם</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

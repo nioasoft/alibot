@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}AliBot — הגדרות{% endblock %}
+{% block content %}
+<h2 class="text-lg font-semibold mb-4">הגדרות (קריאה בלבד)</h2>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="font-semibold mb-3">טלגרם</h3>
+        <dl class="text-sm space-y-2">
+            <div><dt class="text-gray-500">קבוצות מקור</dt><dd>{% for g in config.telegram.source_groups %}<span class="bg-gray-100 rounded px-2 py-0.5 text-xs ms-1">{{ g }}</span>{% endfor %}</dd></div>
+            <div><dt class="text-gray-500">קבוצות יעד</dt><dd>{% for k, v in config.telegram.target_groups.items() %}<div><span class="text-gray-400">{{ k }}:</span> {{ v }}</div>{% endfor %}</dd></div>
+        </dl>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="font-semibold mb-3">פרסום</h3>
+        <dl class="text-sm space-y-2">
+            <div><dt class="text-gray-500">דיליי מינימלי</dt><dd>{{ config.publishing.min_delay_seconds }} שניות</dd></div>
+            <div><dt class="text-gray-500">מקסימום לשעה</dt><dd>{{ config.publishing.max_posts_per_hour }}</dd></div>
+            <div><dt class="text-gray-500">שעות שקט</dt><dd>{{ config.publishing.quiet_hours_start }}:00 — {{ config.publishing.quiet_hours_end }}:00</dd></div>
+        </dl>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="font-semibold mb-3">כפילויות</h3>
+        <dl class="text-sm space-y-2">
+            <div><dt class="text-gray-500">חלון זמן</dt><dd>{{ config.dedup.window_hours }} שעות</dd></div>
+            <div><dt class="text-gray-500">סף תמונה</dt><dd>{{ config.dedup.image_hash_threshold }}</dd></div>
+        </dl>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="font-semibold mb-3">ווטרמארק</h3>
+        <dl class="text-sm space-y-2">
+            <div><dt class="text-gray-500">מיקום</dt><dd>{{ config.watermark.position }}</dd></div>
+            <div><dt class="text-gray-500">שקיפות</dt><dd>{{ (config.watermark.opacity * 100) | int }}%</dd></div>
+            <div><dt class="text-gray-500">גודל</dt><dd>{{ (config.watermark.scale * 100) | int }}%</dd></div>
+        </dl>
+    </div>
+</div>
+{% endblock %}

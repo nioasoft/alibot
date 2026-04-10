@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}AliBot — לוגים{% endblock %}
+{% block content %}
+<h2 class="text-lg font-semibold mb-4">לוגים אחרונים</h2>
+<div class="bg-white rounded-lg shadow p-4">
+    <pre class="text-xs font-mono bg-gray-900 text-green-400 p-4 rounded overflow-x-auto max-h-[600px] overflow-y-auto" dir="ltr">{{ log_content }}</pre>
+</div>
+{% endblock %}

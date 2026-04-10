@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AliBot Dashboard{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    {% if auto_refresh %}
+    <meta http-equiv="refresh" content="{{ auto_refresh }}">
+    {% endif %}
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 class="text-xl font-bold">🤖 AliBot</h1>
+            <div class="flex gap-4 text-sm">
+                <a href="/" class="hover:text-blue-600">ראשי</a>
+                <a href="/deals" class="hover:text-blue-600">דילים</a>
+                <a href="/queue" class="hover:text-blue-600">תור</a>
+                <a href="/settings" class="hover:text-blue-600">הגדרות</a>
+                <a href="/logs" class="hover:text-blue-600">לוגים</a>
+            </div>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

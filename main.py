@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 
+import uvicorn
 from dotenv import load_dotenv
 from loguru import logger
 from telethon import TelegramClient, Button
@@ -25,6 +26,7 @@ from bot.publisher import DealPublisher
 from bot.notifier import Notifier
 from bot.admin import AdminCommands
 from bot.listener import TelegramListener
+from dashboard.app import create_dashboard
 
 
 def _setup_logging():
@@ -170,6 +172,18 @@ async def main():
 
     # Startup notification
     await notifier.notify_startup()
+
+    # Dashboard
+    dashboard_app = create_dashboard(SessionFactory, config)
+    uvicorn_config = uvicorn.Config(
+        dashboard_app,
+        host="0.0.0.0",
+        port=config.dashboard.port,
+        log_level="warning",
+    )
+    server = uvicorn.Server(uvicorn_config)
+    asyncio.create_task(server.serve())
+    logger.info(f"Dashboard running on http://0.0.0.0:{config.dashboard.port}")
 
     # Run
     logger.info("Bot is running! Listening for deals...")

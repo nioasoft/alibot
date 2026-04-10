@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}AliBot — ראשי{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm text-gray-500">דילים שנראו היום</div>
+        <div class="text-3xl font-bold">{{ stats.deals_seen }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm text-gray-500">פורסמו היום</div>
+        <div class="text-3xl font-bold text-green-600">{{ stats.deals_published }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm text-gray-500">בתור לפרסום</div>
+        <div class="text-3xl font-bold text-blue-600">{{ queue_count }}</div>
+    </div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm text-gray-500">כפילויות שנדחו</div>
+        <div class="text-2xl font-bold text-yellow-600">{{ stats.deals_skipped_dup }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow p-6">
+        <div class="text-sm text-gray-500">שגיאות</div>
+        <div class="text-2xl font-bold text-red-600">{{ stats.deals_skipped_error }}</div>
+    </div>
+</div>
+<h2 class="text-lg font-semibold mb-4">דילים אחרונים</h2>
+<div class="bg-white rounded-lg shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-4 py-3 text-right">מוצר</th>
+                <th class="px-4 py-3 text-right">מחיר</th>
+                <th class="px-4 py-3 text-right">קטגוריה</th>
+                <th class="px-4 py-3 text-right">סטטוס</th>
+                <th class="px-4 py-3 text-right">זמן</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y">
+            {% for deal, status in recent_deals %}
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:50] }}</a></td>
+                <td class="px-4 py-3">{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}</td>
+                <td class="px-4 py-3">{{ deal.category }}</td>
+                <td class="px-4 py-3">
+                    {% if status == "published" %}<span class="text-green-600">✅ פורסם</span>
+                    {% elif status == "queued" %}<span class="text-blue-600">⏳ בתור</span>
+                    {% else %}<span class="text-gray-500">{{ status }}</span>{% endif %}
+                </td>
+                <td class="px-4 py-3 text-gray-500">{{ deal.created_at.strftime("%H:%M") }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

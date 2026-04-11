@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
+import { PageView } from "@/components/PageView";
 import "./globals.css";
 
 const heebo = Heebo({
@@ -78,7 +79,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl" className={`${heebo.variable} antialiased`}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <PageView />
+        {children}
+      </body>
     </html>
   );
 }

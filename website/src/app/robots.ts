@@ -6,6 +6,6 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
     },
-    sitemap: "https://deals.vercel.app/sitemap.xml",
+    sitemap: "https://website-three-xi-47.vercel.app/sitemap.xml",
   };
 }

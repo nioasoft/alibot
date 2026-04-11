@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 import { CATEGORY_SLUGS } from "@/lib/categories";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://deals.vercel.app";
+  const baseUrl = "https://website-three-xi-47.vercel.app";
 
   const categoryPages = CATEGORY_SLUGS.map((slug) => ({
     url: `${baseUrl}/category/${slug}`,

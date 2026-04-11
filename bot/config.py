@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 import yaml
+
+
+@dataclass(frozen=True)
+class DestinationConfig:
+    key: str
+    enabled: bool
+    platform: str
+    target: str
+    categories: list[str]
 
 
 @dataclass(frozen=True)
@@ -16,7 +24,6 @@ class TelegramConfig:
     phone: str
     admin_user_id: int
     source_groups: list[str]
-    target_groups: dict[str, str]
     admin_chat: str
     channel_link: str
 
@@ -36,6 +43,7 @@ class PublishingConfig:
     quiet_hours_end: int
     hot_products_interval_hours: int = 4
     hot_products_per_run: int = 3
+    destinations: dict[str, DestinationConfig] | None = None
 
 
 @dataclass(frozen=True)
@@ -65,17 +73,34 @@ class DashboardConfig:
 
 
 @dataclass(frozen=True)
-class AliExpressConfig:
+class AliExpressAccountConfig:
+    key: str
     app_key: str
     app_secret: str
     tracking_id: str
+
+    @property
+    def is_enabled(self) -> bool:
+        return bool(self.app_key and self.app_secret and self.tracking_id)
+
+
+@dataclass(frozen=True)
+class AliExpressConfig:
+    accounts: dict[str, AliExpressAccountConfig]
+    catalog_account: str
+    affiliate_distribution: dict[str, int]
 
 
 @dataclass(frozen=True)
 class WhatsAppConfig:
     service_url: str
-    group_jid: str
     group_link: str
+
+
+@dataclass(frozen=True)
+class SupabaseConfig:
+    url: str
+    service_key: str
 
 
 @dataclass(frozen=True)
@@ -89,14 +114,10 @@ class AppConfig:
     dashboard: DashboardConfig
     aliexpress: AliExpressConfig
     whatsapp: WhatsAppConfig
+    supabase: SupabaseConfig | None = None
 
 
 def _require_env(name: str) -> str:
-    """Return the value of a required environment variable.
-
-    Raises:
-        ValueError: If the environment variable is not set or empty.
-    """
     value = os.environ.get(name)
     if not value:
         raise ValueError(
@@ -106,15 +127,101 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _optional_env(name: str, fallback: str = "") -> str:
+    return os.environ.get(name, fallback)
+
+
+def _load_destinations(raw: dict) -> dict[str, DestinationConfig]:
+    publishing_raw = raw["publishing"]
+    raw_destinations = publishing_raw.get("destinations", {})
+    destinations: dict[str, DestinationConfig] = {}
+
+    if raw_destinations:
+        for key, dest_raw in raw_destinations.items():
+            destinations[key] = DestinationConfig(
+                key=key,
+                enabled=bool(dest_raw.get("enabled", True)),
+                platform=str(dest_raw["platform"]),
+                target=str(dest_raw["target"]),
+                categories=[str(cat) for cat in dest_raw.get("categories", ["other"])],
+            )
+        return destinations
+
+    # Backward-compatible fallback for the old single-platform config.
+    for key, target in raw.get("telegram", {}).get("target_groups", {}).items():
+        destinations[f"telegram_{key}"] = DestinationConfig(
+            key=f"telegram_{key}",
+            enabled=True,
+            platform="telegram",
+            target=str(target),
+            categories=["*"] if key == "default" else [str(key)],
+        )
+
+    whatsapp_group = raw.get("whatsapp", {}).get("group_jid", "")
+    if whatsapp_group:
+        destinations["whatsapp_default"] = DestinationConfig(
+            key="whatsapp_default",
+            enabled=True,
+            platform="whatsapp",
+            target=str(whatsapp_group),
+            categories=["*"],
+        )
+
+    return destinations
+
+
+def _load_aliexpress_config(raw: dict) -> AliExpressConfig:
+    ali_raw = raw.get("aliexpress", {})
+
+    primary = AliExpressAccountConfig(
+        key="primary",
+        app_key=_optional_env("ALIEXPRESS_PRIMARY_APP_KEY", _optional_env("ALIEXPRESS_APP_KEY")),
+        app_secret=_optional_env("ALIEXPRESS_PRIMARY_APP_SECRET", _optional_env("ALIEXPRESS_APP_SECRET")),
+        tracking_id=_optional_env(
+            "ALIEXPRESS_PRIMARY_TRACKING_ID",
+            _optional_env("ALIEXPRESS_TRACKING_ID"),
+        ),
+    )
+    secondary = AliExpressAccountConfig(
+        key="secondary",
+        app_key=_optional_env("ALIEXPRESS_SECONDARY_APP_KEY"),
+        app_secret=_optional_env("ALIEXPRESS_SECONDARY_APP_SECRET"),
+        tracking_id=_optional_env("ALIEXPRESS_SECONDARY_TRACKING_ID"),
+    )
+
+    accounts = {"primary": primary}
+    if secondary.app_key or secondary.app_secret or secondary.tracking_id:
+        accounts["secondary"] = secondary
+
+    distribution_raw = ali_raw.get("affiliate_distribution", {"primary": 100})
+    affiliate_distribution = {
+        str(key): max(0, int(value))
+        for key, value in distribution_raw.items()
+    }
+
+    if sum(affiliate_distribution.values()) <= 0:
+        affiliate_distribution = {"primary": 100}
+
+    catalog_account = str(ali_raw.get("catalog_account", "primary"))
+    if catalog_account not in accounts:
+        catalog_account = "primary"
+
+    return AliExpressConfig(
+        accounts=accounts,
+        catalog_account=catalog_account,
+        affiliate_distribution=affiliate_distribution,
+    )
+
+
+def _load_supabase_config() -> SupabaseConfig | None:
+    url = _optional_env("SUPABASE_URL")
+    service_key = _optional_env("SUPABASE_SERVICE_KEY")
+    if url and service_key:
+        return SupabaseConfig(url=url, service_key=service_key)
+    return None
+
+
 def load_config(config_path: str) -> AppConfig:
-    """Load config from YAML file + environment variables.
-
-    Args:
-        config_path: Path to the YAML configuration file.
-
-    Returns:
-        Fully populated AppConfig with secrets from environment variables.
-    """
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
@@ -125,7 +232,6 @@ def load_config(config_path: str) -> AppConfig:
             phone=_require_env("TELEGRAM_PHONE"),
             admin_user_id=int(_require_env("TELEGRAM_ADMIN_USER_ID")),
             source_groups=raw["telegram"]["source_groups"],
-            target_groups=raw["telegram"]["target_groups"],
             admin_chat=raw["telegram"]["admin_chat"],
             channel_link=raw["telegram"].get("channel_link", ""),
         ),
@@ -141,6 +247,7 @@ def load_config(config_path: str) -> AppConfig:
             quiet_hours_end=raw["publishing"]["quiet_hours_end"],
             hot_products_interval_hours=raw["publishing"].get("hot_products_interval_hours", 4),
             hot_products_per_run=raw["publishing"].get("hot_products_per_run", 3),
+            destinations=_load_destinations(raw),
         ),
         dedup=DedupConfig(
             window_hours=raw["dedup"]["window_hours"],
@@ -160,14 +267,10 @@ def load_config(config_path: str) -> AppConfig:
             port=raw["dashboard"]["port"],
             auto_refresh_seconds=raw["dashboard"]["auto_refresh_seconds"],
         ),
-        aliexpress=AliExpressConfig(
-            app_key=os.environ.get("ALIEXPRESS_APP_KEY", ""),
-            app_secret=os.environ.get("ALIEXPRESS_APP_SECRET", ""),
-            tracking_id=os.environ.get("ALIEXPRESS_TRACKING_ID", ""),
-        ),
+        aliexpress=_load_aliexpress_config(raw),
         whatsapp=WhatsAppConfig(
             service_url=raw.get("whatsapp", {}).get("service_url", "http://localhost:3001"),
-            group_jid=raw.get("whatsapp", {}).get("group_jid", ""),
             group_link=raw.get("whatsapp", {}).get("group_link", ""),
         ),
+        supabase=_load_supabase_config(),
     )

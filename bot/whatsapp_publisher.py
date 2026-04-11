@@ -12,7 +12,7 @@ class WhatsAppPublisher:
     def __init__(self, base_url: str = "http://localhost:3001", group_jid: str = ""):
         self._base_url = base_url
         self._group_jid = group_jid
-        self._enabled = bool(group_jid)
+        self._enabled = bool(base_url)
 
     @property
     def is_enabled(self) -> bool:
@@ -48,6 +48,9 @@ class WhatsAppPublisher:
             return False
 
         target = group_jid or self._group_jid
+        if not target:
+            logger.warning("WhatsApp send skipped: no target group configured")
+            return False
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:

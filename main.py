@@ -3,37 +3,42 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 
 import uvicorn
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 from loguru import logger
 from telethon import TelegramClient
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.cron import CronTrigger
 
-from bot.config import load_config, AppConfig
-from bot.exchange_rate import fetch_usd_ils_rate
-from bot.models import init_db, Deal
-from bot.parser import DealParser
-from bot.dedup import DuplicateChecker
-from bot.resolver import LinkResolver
-from bot.rewriter import ContentRewriter
-from bot.image_processor import ImageProcessor
+from bot.admin import AdminCommands
+from bot.affiliate_pool import AffiliateLinkPool
 from bot.aliexpress_client import AliExpressClient
+from bot.category_resolver import CategoryResolver
+from bot.config import AppConfig, load_config
+from bot.dedup import DuplicateChecker
+from bot.exchange_rate import fetch_usd_ils_rate
+from bot.hot_products import HotProductFetcher
+from bot.image_processor import ImageProcessor
+from bot.listener import TelegramListener
+from bot.models import init_db
+from bot.notifier import Notifier
+from bot.parser import DealParser
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
+from bot.resolver import LinkResolver
+from bot.rewriter import ContentRewriter
+from bot.router import DestinationRouter
+from bot.telegram_publisher import TelegramPublisher
+from bot.supabase_publisher import SupabasePublisher
+from bot.web_publisher import WebPublisher
 from bot.whatsapp_publisher import WhatsAppPublisher
-from bot.hot_products import HotProductFetcher
-from bot.notifier import Notifier
-from bot.admin import AdminCommands
-from bot.listener import TelegramListener
 from dashboard.app import create_dashboard
 
 
-def _setup_logging():
+def _setup_logging() -> None:
     logger.remove()
     logger.add(sys.stderr, level="INFO")
     logger.add(
@@ -48,43 +53,25 @@ async def _send_telegram_message(client: TelegramClient, admin_chat: str, text: 
     await client.send_message(admin_chat, text)
 
 
-async def _send_deal(
-    client: TelegramClient,
-    target_group: str,
-    text: str,
-    link: str,
-    image_path: str | None = None,
-    channel_link: str = "",
-    whatsapp_link: str = "",
-) -> int:
-    """Send deal to target group. Returns message ID."""
-    footer = f"\n\n🛒 לרכישה: {link}"
-    if channel_link or whatsapp_link:
-        footer += "\n\n📢 הצטרפו אלינו:"
-        if channel_link:
-            footer += f"\nטלגרם: {channel_link}"
-        if whatsapp_link:
-            footer += f"\nוואטסאפ: {whatsapp_link}"
-    # Telegram caption limit: 1024 chars for images
-    max_text_len = 1024 - len(footer) - 5
-    if len(text) > max_text_len:
-        text = text[:max_text_len] + "..."
-    caption = f"{text}{footer}"
+def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClient | None, AffiliateLinkPool]:
+    clients: dict[str, AliExpressClient] = {}
+    for key, account in config.aliexpress.accounts.items():
+        clients[key] = AliExpressClient(
+            app_key=account.app_key,
+            app_secret=account.app_secret,
+            tracking_id=account.tracking_id,
+            account_key=key,
+        )
 
-    if image_path:
-        msg = await client.send_file(
-            target_group,
-            image_path,
-            caption=caption,
-            link_preview=False,
-        )
-    else:
-        msg = await client.send_message(
-            target_group,
-            caption,
-            link_preview=False,
-        )
-    return msg.id
+    catalog_client = clients.get(config.aliexpress.catalog_account)
+    if catalog_client is None:
+        catalog_client = clients.get("primary")
+
+    affiliate_pool = AffiliateLinkPool(
+        clients=clients,
+        distribution=config.aliexpress.affiliate_distribution,
+    )
+    return catalog_client, affiliate_pool
 
 
 async def main():
@@ -94,11 +81,9 @@ async def main():
 
     config = load_config("config.yaml")
 
-    # Database
-    SessionFactory = init_db("data/deals.db")
-    session = SessionFactory()
+    session_factory = init_db("data/deals.db")
+    session = session_factory()
 
-    # Telethon client
     client = TelegramClient(
         "data/bot",
         config.telegram.api_id,
@@ -107,13 +92,11 @@ async def main():
     await client.start(phone=config.telegram.phone)
     logger.info("Telegram client connected")
 
-    # Notifier (needs client)
     async def send_to_admin(text: str):
         await _send_telegram_message(client, config.telegram.admin_chat, text)
 
     notifier = Notifier(send_message_func=send_to_admin, session=session)
 
-    # Components
     parser = DealParser(
         min_message_length=config.parser.min_message_length,
         supported_domains=config.parser.supported_domains,
@@ -134,15 +117,11 @@ async def main():
         opacity=config.watermark.opacity,
         scale=config.watermark.scale,
     )
+    router = DestinationRouter(config.publishing.destinations or {})
+    category_resolver = CategoryResolver(rewriter)
 
-    # AliExpress API client
-    ali_client = AliExpressClient(
-        app_key=config.aliexpress.app_key,
-        app_secret=config.aliexpress.app_secret,
-        tracking_id=config.aliexpress.tracking_id,
-    )
+    catalog_client, affiliate_pool = _build_aliexpress_clients(config)
 
-    # Pipeline
     pipeline = Pipeline(
         parser=parser,
         dedup=dedup,
@@ -150,42 +129,49 @@ async def main():
         rewriter=rewriter,
         image_processor=image_processor,
         session=session,
-        target_groups=config.telegram.target_groups,
+        router=router,
+        category_resolver=category_resolver,
         notifier=notifier,
-        aliexpress_client=ali_client,
+        aliexpress_client=catalog_client,
+        affiliate_pool=affiliate_pool,
     )
 
-    # WhatsApp publisher
-    wa_publisher = WhatsAppPublisher(
+    telegram_publisher = TelegramPublisher(
+        client=client,
+        channel_link=config.telegram.channel_link,
+        whatsapp_link=config.whatsapp.group_link,
+    )
+    whatsapp_publisher = WhatsAppPublisher(
         base_url=config.whatsapp.service_url,
-        group_jid=config.whatsapp.group_jid,
     )
-
-    # Publisher
-    async def send_deal_wrapper(target_group: str, text: str, link: str, image_path=None) -> int:
-        return await _send_deal(client, target_group, text, link, image_path, config.telegram.channel_link, config.whatsapp.group_link)
+    if config.supabase:
+        web_publisher = SupabasePublisher(
+            url=config.supabase.url,
+            key=config.supabase.service_key,
+        )
+    else:
+        web_publisher = WebPublisher(enabled=False)
 
     publisher = DealPublisher(
-        send_func=send_deal_wrapper,
         session=session,
         min_delay=config.publishing.min_delay_seconds,
         max_delay=config.publishing.max_delay_seconds,
         max_posts_per_hour=config.publishing.max_posts_per_hour,
         quiet_hours_start=config.publishing.quiet_hours_start,
         quiet_hours_end=config.publishing.quiet_hours_end,
-        whatsapp_publisher=wa_publisher,
+        telegram_publisher=telegram_publisher,
+        whatsapp_publisher=whatsapp_publisher,
+        web_publisher=web_publisher,
         channel_link=config.telegram.channel_link,
         whatsapp_link=config.whatsapp.group_link,
     )
 
-    # Admin
     admin = AdminCommands(
         session=session,
         admin_user_id=config.telegram.admin_user_id,
         publisher=publisher,
     )
 
-    # Listener
     listener = TelegramListener(
         client=client,
         source_groups=config.telegram.source_groups,
@@ -195,20 +181,18 @@ async def main():
     )
     listener.register()
 
-    # Hot products fetcher
     hot_fetcher = HotProductFetcher(
-        ali_api=ali_client,
+        ali_api=catalog_client,
         rewriter=rewriter,
         image_processor=image_processor,
         session=session,
-        target_groups=config.telegram.target_groups,
-        channel_link=config.telegram.channel_link,
+        router=router,
+        category_resolver=category_resolver,
+        affiliate_pool=affiliate_pool,
         max_products_per_run=config.publishing.hot_products_per_run,
     )
 
-    # Scheduler
     scheduler = AsyncIOScheduler()
-    # Fetch exchange rate on startup and daily at 8:00
     await fetch_usd_ils_rate()
     scheduler.add_job(publisher.check_queue, IntervalTrigger(minutes=3), id="publisher")
     scheduler.add_job(notifier.send_daily_summary, CronTrigger(hour=21, minute=0), id="daily_summary")
@@ -219,14 +203,18 @@ async def main():
         IntervalTrigger(hours=config.publishing.hot_products_interval_hours),
         id="hot_products",
     )
+    if hasattr(web_publisher, "cleanup_old_images"):
+        scheduler.add_job(
+            web_publisher.cleanup_old_images,
+            CronTrigger(hour=4, minute=30),
+            id="supabase_cleanup",
+        )
     scheduler.start()
     logger.info("Scheduler started")
 
-    # Startup notification
     await notifier.notify_startup()
 
-    # Dashboard
-    dashboard_app = create_dashboard(SessionFactory, config)
+    dashboard_app = create_dashboard(session_factory, config)
     uvicorn_config = uvicorn.Config(
         dashboard_app,
         host="0.0.0.0",
@@ -237,7 +225,6 @@ async def main():
     asyncio.create_task(server.serve())
     logger.info(f"Dashboard running on http://0.0.0.0:{config.dashboard.port}")
 
-    # Run
     logger.info("Bot is running! Listening for deals...")
     try:
         await client.run_until_disconnected()

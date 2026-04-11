@@ -38,7 +38,8 @@ class ProductDetails:
 
 
 class AliExpressClient:
-    def __init__(self, app_key: str, app_secret: str, tracking_id: str):
+    def __init__(self, app_key: str, app_secret: str, tracking_id: str, account_key: str = "primary"):
+        self.account_key = account_key
         self._enabled = bool(app_key and app_secret and tracking_id)
 
         if self._enabled and HAS_ALI_API:
@@ -49,7 +50,7 @@ class AliExpressClient:
                 ali_models.Currency.USD,
                 tracking_id,
             )
-            logger.info("AliExpress API client initialized")
+            logger.info(f"AliExpress API client initialized for account '{self.account_key}'")
         else:
             self._api = None
             if not self._enabled:

@@ -16,3 +16,8 @@ dist/
 .mypy_cache/
 data/bot.log
 data/*.db-journal
+.DS_Store
+website/node_modules/
+website/.next/
+website/.env.local
+facebook/.env

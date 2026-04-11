@@ -7,17 +7,26 @@ import hashlib
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy.orm import Session
 from loguru import logger
+from sqlalchemy.orm import Session
 
-from bot.parser import DealParser, ParsedDeal
-from bot.dedup import DuplicateChecker
-from bot.resolver import LinkResolver
-from bot.exchange_rate import get_cached_rate
-from bot.rewriter import ContentRewriter
-from bot.image_processor import ImageProcessor, compute_image_hash
-from bot.models import RawMessage, Deal, PublishQueueItem, DailyStat
+from bot.affiliate_pool import AffiliateLinkPool
 from bot.aliexpress_client import AliExpressClient
+from bot.category_resolver import CategoryResolver
+from bot.dedup import DuplicateChecker
+from bot.exchange_rate import get_cached_rate
+from bot.image_processor import ImageProcessor, compute_image_hash
+from bot.models import DailyStat, Deal, PublishQueueItem, RawMessage
+from bot.parser import DealParser
+from bot.resolver import LinkResolver
+from bot.rewriter import ContentRewriter
+from bot.router import DestinationRouter
+
+
+def _canonical_product_url(product_id: str | None, fallback_url: str) -> str:
+    if product_id:
+        return f"https://www.aliexpress.com/item/{product_id}.html"
+    return fallback_url
 
 
 class Pipeline:
@@ -29,10 +38,12 @@ class Pipeline:
         rewriter: ContentRewriter,
         image_processor: ImageProcessor,
         session: Session,
-        target_groups: dict[str, str],
+        router: DestinationRouter,
+        category_resolver: CategoryResolver,
         notifier: object,
         image_dir: str = "data/images",
         aliexpress_client: Optional[AliExpressClient] = None,
+        affiliate_pool: Optional[AffiliateLinkPool] = None,
     ):
         self._parser = parser
         self._dedup = dedup
@@ -40,10 +51,12 @@ class Pipeline:
         self._rewriter = rewriter
         self._image_processor = image_processor
         self._session = session
-        self._target_groups = target_groups
+        self._router = router
+        self._category_resolver = category_resolver
         self._notifier = notifier
         self._image_dir = Path(image_dir)
         self._ali_client = aliexpress_client
+        self._affiliate_pool = affiliate_pool
 
     async def process(
         self,
@@ -52,7 +65,6 @@ class Pipeline:
         source_group: str,
         telegram_message_id: int,
     ) -> Optional[Deal]:
-        # Step 0: Save raw message
         raw = RawMessage(
             source_group=source_group,
             telegram_message_id=telegram_message_id,
@@ -88,35 +100,27 @@ class Pipeline:
         images: list[bytes],
         source_group: str,
     ) -> Optional[Deal]:
-        # Step 1: Parse
         parsed = self._parser.parse(text)
         if parsed is None:
             logger.debug("No AliExpress link found, skipping")
             return None
 
-        # Step 2: Resolve link -> product ID
         product_id = parsed.product_id
         if product_id is None:
             product_id = await self._resolver.resolve(parsed.link)
 
-        # Step 2.5: Enrich from AliExpress API
+        product_url = _canonical_product_url(product_id, parsed.link)
+
         ali_details = None
-        affiliate_link = None
         if self._ali_client and self._ali_client.is_enabled and product_id:
             ali_details = self._ali_client.get_product_details(product_id)
-            affiliate_link = self._ali_client.get_affiliate_link(parsed.link)
             self._increment_stat("api_calls")
-
-            # Use HD images from API if available
             if ali_details and ali_details.images:
                 api_image = self._ali_client.download_image(ali_details.images[0])
                 if api_image:
-                    images = [api_image]  # Replace source images with HD API image
+                    images = [api_image]
 
-        # Step 3: Compute hashes
-        text_hash = hashlib.md5(
-            (parsed.raw_text or "").lower().strip().encode()
-        ).hexdigest()
+        text_hash = hashlib.md5((parsed.raw_text or "").lower().strip().encode()).hexdigest()
 
         image_hash = None
         if images:
@@ -125,7 +129,6 @@ class Pipeline:
             except Exception as e:
                 logger.warning(f"Image hash failed: {e}")
 
-        # Step 4: Dedup check
         if self._dedup.is_duplicate(
             product_id=product_id,
             text_hash=text_hash,
@@ -135,8 +138,12 @@ class Pipeline:
             self._increment_stat("deals_skipped_dup")
             return None
 
-        # Step 5: AI rewrite + categorize
-        # Determine price for rewriter (same logic as DB)
+        category_resolution = await self._category_resolver.resolve(
+            product_name=ali_details.title if ali_details else parsed.raw_text[:100],
+            original_text=text,
+            ali_category_raw=ali_details.category if ali_details else None,
+        )
+
         rewrite_price = None
         rewrite_currency = parsed.currency
         if ali_details and (ali_details.sale_price or ali_details.price):
@@ -156,17 +163,14 @@ class Pipeline:
             usd_ils_rate=get_cached_rate(),
         )
 
-        # Step 6: Process images (watermark)
         processed_images: list[bytes] = []
         for img_bytes in images:
             try:
-                processed = self._image_processor.add_watermark(img_bytes)
-                processed_images.append(processed)
+                processed_images.append(self._image_processor.add_watermark(img_bytes))
             except Exception as e:
                 logger.warning(f"Watermark failed, using original: {e}")
                 processed_images.append(img_bytes)
 
-        # Step 7: Determine best price (API > parsed > None)
         final_price = None
         final_currency = parsed.currency or "ILS"
         if ali_details and (ali_details.sale_price or ali_details.price):
@@ -175,7 +179,14 @@ class Pipeline:
         elif parsed.price:
             final_price = parsed.price
 
-        # Save deal to DB
+        affiliate_link = None
+        affiliate_account_key = None
+        if self._affiliate_pool:
+            affiliate_link, affiliate_account_key = self._affiliate_pool.get_affiliate_link(
+                product_url,
+                seed=product_id or product_url,
+            )
+
         deal = Deal(
             raw_message_id=raw.id,
             product_id=product_id,
@@ -186,8 +197,12 @@ class Pipeline:
             original_price=parsed.original_price,
             currency=final_currency,
             shipping=parsed.shipping,
-            category=rewrite_result.category,
-            product_link=affiliate_link or parsed.link,
+            category=category_resolution.category,
+            ali_category_raw=category_resolution.ali_category_raw,
+            category_source=category_resolution.source,
+            affiliate_account_key=affiliate_account_key,
+            affiliate_link=affiliate_link,
+            product_link=product_url,
             image_hash=image_hash,
             text_hash=text_hash,
             source_group=source_group,
@@ -196,31 +211,32 @@ class Pipeline:
         self._session.add(deal)
         self._session.flush()
 
-        # Save processed image to disk for publisher
         if processed_images:
             self._image_dir.mkdir(parents=True, exist_ok=True)
             img_path = self._image_dir / f"{deal.id}.jpg"
             img_path.write_bytes(processed_images[0])
             deal.image_path = str(img_path)
 
-        # Step 8: Enqueue for publishing
-        target = self._target_groups.get(rewrite_result.category)
-        if target is None:
-            target = self._target_groups.get("default", "")
+        destinations = self._router.resolve(category_resolution.category)
+        for destination in destinations:
+            self._session.add(
+                PublishQueueItem(
+                    deal_id=deal.id,
+                    target_group=destination.target,
+                    destination_key=destination.key,
+                    platform=destination.platform,
+                    target_ref=destination.target,
+                    status="queued",
+                    scheduled_after=datetime.datetime.now(datetime.UTC),
+                )
+            )
 
-        queue_item = PublishQueueItem(
-            deal_id=deal.id,
-            target_group=target,
-            status="queued",
-            scheduled_after=datetime.datetime.now(datetime.UTC),
-        )
-        self._session.add(queue_item)
         self._session.commit()
 
         self._increment_stat("deals_processed")
         logger.info(
             f"Deal processed: {rewrite_result.product_name_clean} "
-            f"-> {rewrite_result.category} -> queued"
+            f"-> {category_resolution.category} -> {len(destinations)} destinations"
         )
 
         return deal

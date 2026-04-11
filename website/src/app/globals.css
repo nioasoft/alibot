@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --brand-orange: #FF6B00;
+  --brand-orange-hover: #E55A00;
+  --brand-orange-light: #FF8C42;
+  --brand-burgundy: #8B1A1A;
+  --brand-navy: #1E2A4A;
+  --brand-navy-light: #2A3A5C;
+  --background: #F5F5F5;
+  --foreground: #1E2A4A;
+  --card-bg: #ffffff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-hover: var(--brand-orange-hover);
+  --color-brand-orange-light: var(--brand-orange-light);
+  --color-brand-burgundy: var(--brand-burgundy);
+  --color-brand-navy: var(--brand-navy);
+  --color-brand-navy-light: var(--brand-navy-light);
+  --color-card-bg: var(--card-bg);
+  --font-sans: var(--font-heebo);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-heebo), Arial, Helvetica, sans-serif;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Hide scrollbar on social links horizontal scroll */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

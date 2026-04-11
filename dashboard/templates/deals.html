@@ -4,15 +4,6 @@
 <h2 class="text-lg font-semibold mb-4">כל הדילים</h2>
 <form method="get" class="flex gap-3 mb-4 items-end">
     <div>
-        <label class="block text-sm text-gray-500 mb-1">סטטוס</label>
-        <select name="status" class="border rounded px-3 py-1.5 text-sm">
-            <option value="">הכל</option>
-            <option value="queued" {{ 'selected' if filter_status == 'queued' }}>בתור</option>
-            <option value="published" {{ 'selected' if filter_status == 'published' }}>פורסם</option>
-            <option value="failed" {{ 'selected' if filter_status == 'failed' }}>נכשל</option>
-        </select>
-    </div>
-    <div>
         <label class="block text-sm text-gray-500 mb-1">קטגוריה</label>
         <select name="category" class="border rounded px-3 py-1.5 text-sm">
             <option value="">הכל</option>
@@ -30,12 +21,12 @@
                 <th class="px-4 py-3 text-right">מחיר</th>
                 <th class="px-4 py-3 text-right">קטגוריה</th>
                 <th class="px-4 py-3 text-right">מקור</th>
-                <th class="px-4 py-3 text-right">סטטוס</th>
+                <th class="px-4 py-3 text-right">יעדים</th>
                 <th class="px-4 py-3 text-right">זמן</th>
             </tr>
         </thead>
         <tbody class="divide-y">
-            {% for deal, status in deals %}
+            {% for deal in deals %}
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 text-gray-400">{{ deal.id }}</td>
                 <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:50] }}</a></td>
@@ -43,10 +34,11 @@
                 <td class="px-4 py-3">{{ deal.category }}</td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.source_group }}</td>
                 <td class="px-4 py-3">
-                    {% if status == "published" %}<span class="text-green-600">✅</span>
-                    {% elif status == "queued" %}<span class="text-blue-600">⏳</span>
-                    {% elif status == "failed" %}<span class="text-red-600">❌</span>
-                    {% else %}<span class="text-gray-400">—</span>{% endif %}
+                    {% for item in queue_summary.get(deal.id, []) %}
+                        <div class="text-xs">{{ item.platform }}: {{ item.status }}</div>
+                    {% else %}
+                        <span class="text-gray-400">—</span>
+                    {% endfor %}
                 </td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localdatetime }}</td>
             </tr>

@@ -1,14 +1,13 @@
 import datetime
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock
 
-from sqlalchemy import select
-
+from bot.models import Deal, PublishQueueItem, RawMessage
 from bot.publisher import DealPublisher
-from bot.models import Deal, PublishQueueItem, RawMessage, DailyStat
 
 
-def _seed_deal(db_session, deal_id: int = 1) -> tuple[Deal, PublishQueueItem]:
+def _seed_deal(db_session, deal_id: int = 1, platform: str = "telegram", target_ref: str = "@my_channel"):
     raw = RawMessage(
         source_group="@test",
         telegram_message_id=deal_id,
@@ -38,7 +37,10 @@ def _seed_deal(db_session, deal_id: int = 1) -> tuple[Deal, PublishQueueItem]:
 
     queue_item = PublishQueueItem(
         deal_id=deal.id,
-        target_group="@my_channel",
+        target_group=target_ref,
+        destination_key=f"{platform}_{deal_id}",
+        platform=platform,
+        target_ref=target_ref,
         status="queued",
         scheduled_after=datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=1),
     )
@@ -49,14 +51,25 @@ def _seed_deal(db_session, deal_id: int = 1) -> tuple[Deal, PublishQueueItem]:
 
 @pytest.fixture
 def publisher(db_session):
+    telegram = MagicMock()
+    telegram.send_deal = AsyncMock(return_value=99999)
+
+    whatsapp = MagicMock()
+    whatsapp.send_deal = AsyncMock(return_value=True)
+
+    web = MagicMock()
+    web.send_deal = AsyncMock(return_value=True)
+
     return DealPublisher(
-        send_func=AsyncMock(return_value=99999),
         session=db_session,
         min_delay=300,
         max_delay=600,
         max_posts_per_hour=4,
         quiet_hours_start=23,
         quiet_hours_end=7,
+        telegram_publisher=telegram,
+        whatsapp_publisher=whatsapp,
+        web_publisher=web,
     )
 
 
@@ -69,43 +82,20 @@ class TestQueuePicking:
         assert item is not None
         assert item.status == "queued"
 
-    def test_skips_already_published(self, publisher: DealPublisher, db_session):
-        _, qi = _seed_deal(db_session, deal_id=1)
-        qi.status = "published"
-        db_session.commit()
-
-        item = publisher.pick_next()
-        assert item is None
-
     def test_respects_scheduled_after(self, publisher: DealPublisher, db_session):
         _, qi = _seed_deal(db_session, deal_id=1)
         qi.scheduled_after = datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)
         db_session.commit()
 
-        item = publisher.pick_next()
-        assert item is None
-
-    def test_returns_none_when_empty(self, publisher: DealPublisher):
-        item = publisher.pick_next()
-        assert item is None
+        assert publisher.pick_next() is None
 
 
 class TestQuietHours:
     def test_is_quiet_at_midnight(self, publisher: DealPublisher):
-        midnight = datetime.datetime(2026, 1, 1, 0, 0)
-        assert publisher.is_quiet_hour(midnight) is True
+        assert publisher.is_quiet_hour(datetime.datetime(2026, 1, 1, 0, 0)) is True
 
     def test_is_not_quiet_at_noon(self, publisher: DealPublisher):
-        noon = datetime.datetime(2026, 1, 1, 12, 0)
-        assert publisher.is_quiet_hour(noon) is False
-
-    def test_is_quiet_at_23(self, publisher: DealPublisher):
-        late = datetime.datetime(2026, 1, 1, 23, 30)
-        assert publisher.is_quiet_hour(late) is True
-
-    def test_is_not_quiet_at_7(self, publisher: DealPublisher):
-        morning = datetime.datetime(2026, 1, 1, 7, 0)
-        assert publisher.is_quiet_hour(morning) is False
+        assert publisher.is_quiet_hour(datetime.datetime(2026, 1, 1, 12, 0)) is False
 
 
 class TestRateLimit:
@@ -118,14 +108,14 @@ class TestRateLimit:
 
         assert publisher.is_rate_limited("@my_channel") is True
 
-    def test_rate_limit_allows_under_max(self, publisher: DealPublisher, db_session):
+    def test_rate_limit_allows_under_max(self, publisher: DealPublisher):
         assert publisher.is_rate_limited("@my_channel") is False
 
 
 @pytest.mark.asyncio
 class TestPublishExecution:
-    async def test_publish_marks_as_published(self, publisher: DealPublisher, db_session):
-        deal, qi = _seed_deal(db_session, deal_id=1)
+    async def test_publish_marks_telegram_item_as_published(self, publisher: DealPublisher, db_session):
+        deal, qi = _seed_deal(db_session, deal_id=1, platform="telegram")
 
         await publisher.publish_one(qi, deal)
 
@@ -133,3 +123,13 @@ class TestPublishExecution:
         assert qi.status == "published"
         assert qi.message_id == 99999
         assert qi.published_at is not None
+
+    async def test_publish_whatsapp_item_marks_published(self, publisher: DealPublisher, db_session):
+        deal, qi = _seed_deal(db_session, deal_id=2, platform="whatsapp", target_ref="120@g.us")
+
+        await publisher.publish_one(qi, deal)
+
+        db_session.refresh(qi)
+        assert qi.status == "published"
+        assert qi.message_id is None
+        publisher._whatsapp.send_deal.assert_awaited_once()

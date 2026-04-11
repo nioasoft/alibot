@@ -87,20 +87,21 @@ class AdminCommands:
         except ValueError:
             return "Usage: /skip <deal_id> (מספר)"
 
-        item = self._session.execute(
+        items = self._session.execute(
             select(PublishQueueItem).where(
                 PublishQueueItem.deal_id == deal_id,
                 PublishQueueItem.status == "queued",
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
 
-        if item is None:
+        if not items:
             return f"לא נמצא דיל {deal_id} בתור."
 
-        item.status = "failed"
-        item.error_message = "Skipped by admin"
+        for item in items:
+            item.status = "failed"
+            item.error_message = "Skipped by admin"
         self._session.commit()
-        return f"⏭ דיל {deal_id} דולג."
+        return f"⏭ דיל {deal_id} דולג ({len(items)} יעדים)."
 
     def _cmd_last(self) -> str:
         items = self._session.execute(

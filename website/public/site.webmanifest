@@ -1,0 +1,23 @@
+{
+  "name": "מכורים לדילים ומבצעים",
+  "short_name": "מכורים לדילים",
+  "description": "הדילים הכי טובים, הכי מהר, הכי קל - בקבוצה שלנו!",
+  "start_url": "/",
+  "display": "standalone",
+  "dir": "rtl",
+  "lang": "he",
+  "background_color": "#F5F5F5",
+  "theme_color": "#FF6B00",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

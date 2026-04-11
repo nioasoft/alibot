@@ -8,6 +8,7 @@
             <tr>
                 <th class="px-4 py-3 text-right">דיל</th>
                 <th class="px-4 py-3 text-right">מוצר</th>
+                <th class="px-4 py-3 text-right">פלטפורמה</th>
                 <th class="px-4 py-3 text-right">יעד</th>
                 <th class="px-4 py-3 text-right">עדיפות</th>
                 <th class="px-4 py-3 text-right">מתוזמן אחרי</th>
@@ -19,7 +20,8 @@
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3 text-gray-400">#{{ deal.id }}</td>
                 <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:40] }}</a></td>
-                <td class="px-4 py-3">{{ qi.target_group }}</td>
+                <td class="px-4 py-3">{{ qi.platform }}</td>
+                <td class="px-4 py-3">{{ qi.target_ref }}</td>
                 <td class="px-4 py-3">{{ qi.priority }}</td>
                 <td class="px-4 py-3 text-gray-500">{{ qi.scheduled_after | localtime }}</td>
                 <td class="px-4 py-3 flex gap-2">

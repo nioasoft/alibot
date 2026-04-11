@@ -28,6 +28,14 @@ tech, home, fashion, beauty, toys, sports, auto, other
 החזר JSON בלבד:
 {"rewritten_text": "...", "category": "...", "product_name_clean": "שם מוצר נקי באנגלית"}"""
 
+_CLASSIFIER_PROMPT = """אתה מסווג דילי AliExpress לקטגוריה אחת בלבד.
+
+בחר רק אחת מהאפשרויות:
+tech, home, fashion, beauty, toys, sports, auto, other
+
+החזר JSON בלבד:
+{"category": "..."}"""
+
 
 @dataclass(frozen=True)
 class RewriteResult:
@@ -83,6 +91,33 @@ class ContentRewriter:
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             return self._fallback(product_name, price, currency, usd_ils_rate)
+
+    async def classify_category(
+        self,
+        product_name: str,
+        original_text: str,
+    ) -> str:
+        try:
+            response = await self._client.chat.completions.create(
+                model=self._model,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": _CLASSIFIER_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"מוצר: {product_name}\n\nטקסט מקורי:\n{original_text}",
+                    },
+                ],
+                temperature=0.1,
+                max_tokens=50,
+            )
+            raw = response.choices[0].message.content
+            data = json.loads(raw)
+            category = str(data.get("category", "other")).strip().lower()
+            return category or "other"
+        except Exception as e:
+            logger.warning(f"Category classification failed: {e}")
+            return "other"
 
     def _build_user_prompt(
         self,

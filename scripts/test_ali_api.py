@@ -11,13 +11,14 @@ from aliexpress_api import AliexpressApi, models as ali_models
 from bot.config import load_config
 
 config = load_config("config.yaml")
+account = config.aliexpress.accounts[config.aliexpress.catalog_account]
 
 api = AliexpressApi(
-    config.aliexpress.app_key,
-    config.aliexpress.app_secret,
+    account.app_key,
+    account.app_secret,
     ali_models.Language.EN,
     ali_models.Currency.USD,
-    config.aliexpress.tracking_id,
+    account.tracking_id,
 )
 
 print("=" * 60)

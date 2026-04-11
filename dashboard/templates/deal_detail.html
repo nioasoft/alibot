@@ -9,6 +9,9 @@
             <div><dt class="text-gray-500">מוצר</dt><dd class="font-medium">{{ deal.product_name }}</dd></div>
             <div><dt class="text-gray-500">מחיר</dt><dd>{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% if deal.original_price %} <s class="text-gray-400">{{ deal.original_price }}</s>{% endif %}</dd></div>
             <div><dt class="text-gray-500">קטגוריה</dt><dd>{{ deal.category }}</dd></div>
+            <div><dt class="text-gray-500">קטגוריית AliExpress</dt><dd>{{ deal.ali_category_raw or "—" }}</dd></div>
+            <div><dt class="text-gray-500">מקור קטגוריה</dt><dd>{{ deal.category_source or "—" }}</dd></div>
+            <div><dt class="text-gray-500">Affiliate Account</dt><dd>{{ deal.affiliate_account_key or "—" }}</dd></div>
             <div><dt class="text-gray-500">משלוח</dt><dd>{{ deal.shipping or "—" }}</dd></div>
             <div><dt class="text-gray-500">מקור</dt><dd>{{ deal.source_group }}</dd></div>
             <div><dt class="text-gray-500">לינק</dt><dd><a href="{{ deal.product_link }}" target="_blank" class="text-blue-600 hover:underline break-all">{{ deal.product_link[:60] }}...</a></dd></div>
@@ -26,14 +29,20 @@
         </div>
     </div>
 </div>
-{% if queue_item %}
+{% if queue_items %}
 <div class="mt-6 bg-white rounded-lg shadow p-6">
     <h3 class="font-semibold mb-2">סטטוס פרסום</h3>
     <div class="text-sm space-y-1">
-        <div>סטטוס: <strong>{{ queue_item.status }}</strong></div>
-        <div>קבוצת יעד: {{ queue_item.target_group }}</div>
-        {% if queue_item.published_at %}<div>פורסם: {{ queue_item.published_at | localdatetime }}</div>{% endif %}
-        {% if queue_item.error_message %}<div class="text-red-600">שגיאה: {{ queue_item.error_message }}</div>{% endif %}
+        {% for queue_item in queue_items %}
+        <div class="border rounded p-3">
+            <div>יעד: <strong>{{ queue_item.destination_key }}</strong></div>
+            <div>פלטפורמה: {{ queue_item.platform }}</div>
+            <div>Target: {{ queue_item.target_ref }}</div>
+            <div>סטטוס: <strong>{{ queue_item.status }}</strong></div>
+            {% if queue_item.published_at %}<div>פורסם: {{ queue_item.published_at | localdatetime }}</div>{% endif %}
+            {% if queue_item.error_message %}<div class="text-red-600">שגיאה: {{ queue_item.error_message }}</div>{% endif %}
+        </div>
+        {% endfor %}
     </div>
 </div>
 {% endif %}

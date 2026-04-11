@@ -86,3 +86,22 @@ class TestContentRewriter:
 
         assert result is not None
         assert result.category == "other"
+
+    async def test_classify_category_returns_structured_value(self, rewriter: ContentRewriter):
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content=json.dumps({"category": "sports"})))
+        ]
+
+        with patch.object(
+            rewriter._client.chat.completions,
+            "create",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            result = await rewriter.classify_category(
+                product_name="Training band",
+                original_text="Resistance band for workouts",
+            )
+
+        assert result == "sports"

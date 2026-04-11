@@ -33,20 +33,28 @@
                 <th class="px-4 py-3 text-right">מוצר</th>
                 <th class="px-4 py-3 text-right">מחיר</th>
                 <th class="px-4 py-3 text-right">קטגוריה</th>
-                <th class="px-4 py-3 text-right">סטטוס</th>
+                <th class="px-4 py-3 text-right">יעדים</th>
                 <th class="px-4 py-3 text-right">זמן</th>
             </tr>
         </thead>
         <tbody class="divide-y">
-            {% for deal, status in recent_deals %}
+            {% for deal in recent_deals %}
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:50] }}</a></td>
                 <td class="px-4 py-3">{% if deal.price %}{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% else %}—{% endif %}</td>
                 <td class="px-4 py-3">{{ deal.category }}</td>
                 <td class="px-4 py-3">
-                    {% if status == "published" %}<span class="text-green-600">✅ פורסם</span>
-                    {% elif status == "queued" %}<span class="text-blue-600">⏳ בתור</span>
-                    {% else %}<span class="text-gray-500">{{ status }}</span>{% endif %}
+                    {% set items = queue_summary.get(deal.id, []) %}
+                    {% if items %}
+                        {% for item in items %}
+                            <div class="text-xs">
+                                <span class="text-gray-500">{{ item.platform }}</span>:
+                                <span class="{% if item.status == 'published' %}text-green-600{% elif item.status == 'queued' %}text-blue-600{% else %}text-gray-500{% endif %}">{{ item.status }}</span>
+                            </div>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-gray-400">—</span>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localtime }}</td>
             </tr>

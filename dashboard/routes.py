@@ -5,14 +5,29 @@ from __future__ import annotations
 import datetime
 
 from fastapi import FastAPI, Request
+from sqlalchemy import func, select
 from starlette.responses import RedirectResponse
-from sqlalchemy import select, func
 
-from bot.models import Deal, PublishQueueItem, DailyStat
+from bot.models import DailyStat, Deal, PublishQueueItem
+
+
+def _queue_summary(session, deal_ids: list[int]) -> dict[int, list[PublishQueueItem]]:
+    if not deal_ids:
+        return {}
+
+    rows = session.execute(
+        select(PublishQueueItem)
+        .where(PublishQueueItem.deal_id.in_(deal_ids))
+        .order_by(PublishQueueItem.id.asc())
+    ).scalars().all()
+
+    summary: dict[int, list[PublishQueueItem]] = {}
+    for row in rows:
+        summary.setdefault(row.deal_id, []).append(row)
+    return summary
 
 
 def register_routes(app: FastAPI) -> None:
-
     @app.get("/")
     async def index(request: Request):
         session = app.state.session_factory()
@@ -39,18 +54,19 @@ def register_routes(app: FastAPI) -> None:
                 .where(PublishQueueItem.status == "queued")
             ).scalar() or 0
 
-            recent_rows = session.execute(
-                select(Deal, PublishQueueItem.status)
-                .outerjoin(PublishQueueItem, Deal.id == PublishQueueItem.deal_id)
-                .order_by(Deal.created_at.desc())
-                .limit(20)
-            ).all()
+            recent_deals = session.execute(
+                select(Deal).order_by(Deal.created_at.desc()).limit(20)
+            ).scalars().all()
+            queue_summary = _queue_summary(session, [deal.id for deal in recent_deals])
 
             return templates.TemplateResponse(
-                request, "index.html", {
+                request,
+                "index.html",
+                {
                     "stats": stats,
                     "queue_count": queue_count,
-                    "recent_deals": recent_rows,
+                    "recent_deals": recent_deals,
+                    "queue_summary": queue_summary,
                     "auto_refresh": config.dashboard.auto_refresh_seconds,
                 },
             )
@@ -58,34 +74,29 @@ def register_routes(app: FastAPI) -> None:
             session.close()
 
     @app.get("/deals")
-    async def deals_list(request: Request, status: str = "", category: str = ""):
+    async def deals_list(request: Request, category: str = ""):
         session = app.state.session_factory()
         templates = app.state.templates
 
         try:
-            query = (
-                select(Deal, PublishQueueItem.status)
-                .outerjoin(PublishQueueItem, Deal.id == PublishQueueItem.deal_id)
-            )
-            if status:
-                query = query.where(PublishQueueItem.status == status)
+            query = select(Deal)
             if category:
                 query = query.where(Deal.category == category)
 
-            query = query.order_by(Deal.created_at.desc()).limit(100)
-            deals = session.execute(query).all()
+            deals = session.execute(
+                query.order_by(Deal.created_at.desc()).limit(100)
+            ).scalars().all()
 
-            categories = [
-                r[0] for r in session.execute(
-                    select(Deal.category).distinct()
-                ).all()
-            ]
+            queue_summary = _queue_summary(session, [deal.id for deal in deals])
+            categories = [r[0] for r in session.execute(select(Deal.category).distinct()).all()]
 
             return templates.TemplateResponse(
-                request, "deals.html", {
+                request,
+                "deals.html",
+                {
                     "deals": deals,
+                    "queue_summary": queue_summary,
                     "categories": categories,
-                    "filter_status": status,
                     "filter_category": category,
                 },
             )
@@ -101,27 +112,37 @@ def register_routes(app: FastAPI) -> None:
             deal = session.get(Deal, deal_id)
             if deal is None:
                 return templates.TemplateResponse(
-                    request, "index.html", {
+                    request,
+                    "index.html",
+                    {
                         "stats": DailyStat(
                             date=datetime.date.today(),
-                            deals_seen=0, deals_processed=0, deals_published=0,
-                            deals_skipped_dup=0, deals_skipped_error=0, api_calls=0,
+                            deals_seen=0,
+                            deals_processed=0,
+                            deals_published=0,
+                            deals_skipped_dup=0,
+                            deals_skipped_error=0,
+                            api_calls=0,
                         ),
                         "queue_count": 0,
                         "recent_deals": [],
-                    }, status_code=404,
+                        "queue_summary": {},
+                    },
+                    status_code=404,
                 )
 
-            queue_item = session.execute(
+            queue_items = session.execute(
                 select(PublishQueueItem)
                 .where(PublishQueueItem.deal_id == deal_id)
-                .limit(1)
-            ).scalar_one_or_none()
+                .order_by(PublishQueueItem.id.asc())
+            ).scalars().all()
 
             return templates.TemplateResponse(
-                request, "deal_detail.html", {
+                request,
+                "deal_detail.html",
+                {
                     "deal": deal,
-                    "queue_item": queue_item,
+                    "queue_items": queue_items,
                 },
             )
         finally:
@@ -144,7 +165,9 @@ def register_routes(app: FastAPI) -> None:
             ).all()
 
             return templates.TemplateResponse(
-                request, "queue.html", {"items": items},
+                request,
+                "queue.html",
+                {"items": items},
             )
         finally:
             session.close()
@@ -179,7 +202,9 @@ def register_routes(app: FastAPI) -> None:
         templates = app.state.templates
         config = app.state.config
         return templates.TemplateResponse(
-            request, "settings.html", {"config": config},
+            request,
+            "settings.html",
+            {"config": config},
         )
 
     @app.get("/logs")
@@ -194,5 +219,7 @@ def register_routes(app: FastAPI) -> None:
         except FileNotFoundError:
             log_content = "No log file found yet."
         return templates.TemplateResponse(
-            request, "logs.html", {"log_content": log_content},
+            request,
+            "logs.html",
+            {"log_content": log_content},
         )

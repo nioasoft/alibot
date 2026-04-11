@@ -37,6 +37,9 @@ class Deal(Base):
     currency: Mapped[str]
     shipping: Mapped[str | None]
     category: Mapped[str]
+    ali_category_raw: Mapped[str | None]
+    category_source: Mapped[str | None]
+    affiliate_account_key: Mapped[str | None]
     affiliate_link: Mapped[str | None]
     product_link: Mapped[str]
     image_hash: Mapped[str | None]
@@ -58,6 +61,9 @@ class PublishQueueItem(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"))
     target_group: Mapped[str]
+    destination_key: Mapped[str] = mapped_column(default="legacy_default")
+    platform: Mapped[str] = mapped_column(default="telegram")
+    target_ref: Mapped[str] = mapped_column(default="")
     status: Mapped[str]  # queued / publishing / published / failed
     priority: Mapped[int] = mapped_column(default=0)
     scheduled_after: Mapped[datetime.datetime]
@@ -67,6 +73,7 @@ class PublishQueueItem(Base):
 
     __table_args__ = (
         Index("idx_queue_status_scheduled", "status", "scheduled_after"),
+        Index("idx_queue_deal_destination", "deal_id", "destination_key", unique=True),
     )
 
 

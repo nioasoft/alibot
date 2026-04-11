@@ -8,12 +8,8 @@ telegram:
     - "@OfficialKBT"
     - "@IsraelSmartBuy"
 
-  target_groups:
-    default: "@hadilimshelisrael"
-
-  channel_link: "https://t.me/hadilimshelisrael"
-
   admin_chat: "me"
+  channel_link: "https://t.me/hadilimshelisrael"
 
 openai:
   model: "gpt-4o-mini"
@@ -26,6 +22,22 @@ publishing:
   quiet_hours_end: 7
   hot_products_interval_hours: 4
   hot_products_per_run: 3
+  destinations:
+    tg_main:
+      enabled: true
+      platform: "telegram"
+      target: "@hadilimshelisrael"
+      categories: ["*"]
+    wa_main:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363426624009388@g.us"
+      categories: ["*"]
+    web_feed:
+      enabled: true
+      platform: "web"
+      target: "default-feed"
+      categories: ["*"]
 
 dedup:
   window_hours: 24
@@ -49,10 +61,11 @@ dashboard:
   auto_refresh_seconds: 30
 
 aliexpress:
-  # Configured via environment variables
-  # ALIEXPRESS_APP_KEY, ALIEXPRESS_APP_SECRET, ALIEXPRESS_TRACKING_ID
+  catalog_account: "primary"
+  affiliate_distribution:
+    primary: 100
+    secondary: 0
 
 whatsapp:
   service_url: "http://localhost:3001"
-  group_jid: "120363426624009388@g.us"  # הדילים של ישראל 1
   group_link: "https://did.li/qhcsl"

@@ -21,3 +21,4 @@ website/node_modules/
 website/.next/
 website/.env.local
 facebook/.env
+.vercel

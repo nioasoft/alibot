@@ -56,6 +56,7 @@ alibot/
 │   ├── pipeline.py             # תזמור כל שלבי העיבוד
 │   ├── publisher.py            # פרסום מתור עם rate limiting
 │   ├── hot_products.py         # שליפת מוצרים טרנדיים אוטומטית
+│   ├── exchange_rate.py        # שער דולר-שקל יומי
 │   ├── whatsapp_publisher.py   # שליחה לוואטסאפ דרך Baileys service
 │   ├── notifier.py             # התראות שגיאה + סיכום יומי
 │   └── admin.py                # פקודות admin מטלגרם
@@ -97,8 +98,9 @@ ALIEXPRESS_TRACKING_ID=telegram
 
 | הגדרה | ערך | הסבר |
 |-------|-----|-------|
-| `publishing.max_posts_per_hour` | 10 | מקסימום פרסומים בשעה (999 = ללא הגבלה) |
-| `publishing.min_delay_seconds` | 300 | דיליי מינימלי בין פרסומים (5 דקות) |
+| `publishing.max_posts_per_hour` | 12 | מקסימום פרסומים בשעה |
+| `publishing.min_delay_seconds` | 120 | דיליי מינימלי בין פרסומים (2 דקות) |
+| `publishing.max_delay_seconds` | 240 | דיליי מקסימלי (4 דקות) |
 | `publishing.quiet_hours_start/end` | 23/7 | שעות שקט (לא מפרסם) |
 | `publishing.hot_products_interval_hours` | 4 | כל כמה שעות לשלוף מוצרים טרנדיים |
 | `publishing.hot_products_per_run` | 3 | כמה מוצרים לשלוף בכל ריצה |
@@ -245,6 +247,29 @@ ssh asafbenatia@10.0.0.26 'launchctl stop com.alibot.bot && launchctl start com.
 ### Advanced API (ממתין לאישור)
 
 הוגשה בקשה ל-`aliexpress.affiliate.hotproduct.query` ו-`smart_match_product`. כשיאושר, להוסיף כאסטרטגיה נוספת ב-`bot/hot_products.py`.
+
+## שער דולר-שקל
+
+הבוט מעדכן את שער הדולר-שקל אוטומטית:
+- **בהפעלה** — שולף שער מיד
+- **כל יום ב-08:00** — עדכון יומי
+
+השער מועבר ל-AI rewriter, שמציג מחירים גם בדולר וגם בשקלים (למשל: "$2.99 (כ-₪9.15)").
+
+API: `exchangerate-api.com` (חינם, ללא הרשמה).
+
+## מוצרים חמים (Hot Products)
+
+כל 4 שעות הבוט שולף אוטומטית מוצרים טרנדיים מ-AliExpress API ומפרסם אותם.
+
+**3 אסטרטגיות ברוטציה:**
+- **Best Sellers** — מוצרים עם הכי הרבה מכירות
+- **High Commission** — מוצרים עם העמלה הכי גבוהה
+- **Cheapest Deals** — מוצרים זולים (impulse buys)
+
+**30 מילות חיפוש** מותאמות לקהל ישראלי (bluetooth earbuds, kitchen gadgets, phone case, וכו').
+
+מוצרים חמים מסומנים ב-DB עם `source_group = "hot_products"`.
 
 ## Troubleshooting
 

@@ -19,9 +19,9 @@ openai:
   model: "gpt-4o-mini"
 
 publishing:
-  min_delay_seconds: 300
-  max_delay_seconds: 600
-  max_posts_per_hour: 999
+  min_delay_seconds: 120
+  max_delay_seconds: 240
+  max_posts_per_hour: 12
   quiet_hours_start: 23
   quiet_hours_end: 7
   hot_products_interval_hours: 4

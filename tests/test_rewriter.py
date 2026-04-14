@@ -2,6 +2,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from bot.aliexpress_client import PromoCode
 from bot.rewriter import ContentRewriter, RewriteResult
 
 
@@ -105,3 +106,24 @@ class TestContentRewriter:
             )
 
         assert result == "sports"
+
+    async def test_finalize_text_adds_coupon_and_shipping_lines(self, rewriter: ContentRewriter):
+        text = rewriter.finalize_text(
+            "🔥 מצלמה לבית",
+            price=38.6,
+            currency="USD",
+            usd_ils_rate=3.7,
+            shipping_tags=["משלוח חינם", "משלוח מהיר"],
+            coupon_codes=["ILAPR2", "DSB2"],
+            promo_codes=[
+                PromoCode(
+                    code="SAVE7",
+                    value="On order over USD 10, get USD 7 off",
+                )
+            ],
+        )
+
+        assert "💰 מחיר: $38.6" in text
+        assert "🚚 משלוח חינם · משלוח מהיר" in text
+        assert "🎟️ קוד הנחה: SAVE7 - On order over USD 10, get USD 7 off" in text
+        assert "🎟️ קוד הנחה: ILAPR2, DSB2" in text

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import yaml
 
@@ -23,9 +25,25 @@ class TelegramConfig:
     api_hash: str
     phone: str
     admin_user_id: int
-    source_groups: list[str]
+    source_groups: list[str | int]
+    manual_source_groups: list[str]
     admin_chat: str
     channel_link: str
+
+
+@dataclass(frozen=True)
+class InviteLinkConfig:
+    url: str
+    label: str
+    platform: str
+    footer_label: str
+
+
+@dataclass(frozen=True)
+class MarketingConfig:
+    site_url: str
+    invite_links_path: str
+    invite_links: list[InviteLinkConfig]
 
 
 @dataclass(frozen=True)
@@ -67,6 +85,16 @@ class ParserConfig:
 
 
 @dataclass(frozen=True)
+class QualityConfig:
+    min_score_external: int
+    min_score_hot_products: int
+    manual_priority: int
+    idle_destination_hours: int
+    idle_min_score: int
+    idle_priority_boost: int
+
+
+@dataclass(frozen=True)
 class DashboardConfig:
     port: int
     auto_refresh_seconds: int
@@ -98,6 +126,12 @@ class WhatsAppConfig:
 
 
 @dataclass(frozen=True)
+class FacebookConfig:
+    service_url: str
+    landing_page_url: str
+
+
+@dataclass(frozen=True)
 class SupabaseConfig:
     url: str
     service_key: str
@@ -106,14 +140,17 @@ class SupabaseConfig:
 @dataclass(frozen=True)
 class AppConfig:
     telegram: TelegramConfig
+    marketing: MarketingConfig
     openai: OpenAIConfig
     publishing: PublishingConfig
     dedup: DedupConfig
     watermark: WatermarkConfig
     parser: ParserConfig
+    quality: QualityConfig
     dashboard: DashboardConfig
     aliexpress: AliExpressConfig
     whatsapp: WhatsAppConfig
+    facebook: FacebookConfig
     supabase: SupabaseConfig | None = None
 
 
@@ -221,8 +258,58 @@ def _load_supabase_config() -> SupabaseConfig | None:
     return None
 
 
+def _default_footer_label(platform: str) -> str:
+    return {
+        "telegram": "📢 להצטרפות לטלגרם",
+        "whatsapp": "💬 להצטרפות לוואטסאפ",
+        "facebook": "📘 להצטרפות לפייסבוק",
+    }.get(platform, "👥 להצטרפות לקבוצה")
+
+
+def _load_marketing_config(raw: dict, config_dir: Path) -> MarketingConfig:
+    marketing_raw = raw.get("marketing", {})
+    site_url = str(
+        marketing_raw.get(
+            "site_url",
+            raw.get("facebook", {}).get("landing_page_url", ""),
+        )
+    ).strip()
+    invite_links_path = str(
+        marketing_raw.get("invite_links_path", "website/src/data/invite-links.json")
+    )
+
+    invite_links: list[InviteLinkConfig] = []
+    if invite_links_path:
+        resolved_path = (config_dir / invite_links_path).resolve()
+        if resolved_path.exists():
+            with open(resolved_path, encoding="utf-8") as f:
+                raw_links = json.load(f)
+            for link_raw in raw_links:
+                url = str(link_raw.get("url", "")).strip()
+                if not url:
+                    continue
+                platform = str(link_raw.get("platform", "")).strip()
+                invite_links.append(
+                    InviteLinkConfig(
+                        url=url,
+                        label=str(link_raw.get("label", "")).strip() or url,
+                        platform=platform,
+                        footer_label=str(
+                            link_raw.get("footerLabel", _default_footer_label(platform))
+                        ).strip(),
+                    )
+                )
+
+    return MarketingConfig(
+        site_url=site_url,
+        invite_links_path=invite_links_path,
+        invite_links=invite_links,
+    )
+
+
 def load_config(config_path: str) -> AppConfig:
-    with open(config_path) as f:
+    config_file = Path(config_path).resolve()
+    with open(config_file, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
 
     return AppConfig(
@@ -231,10 +318,18 @@ def load_config(config_path: str) -> AppConfig:
             api_hash=_require_env("TELEGRAM_API_HASH"),
             phone=_require_env("TELEGRAM_PHONE"),
             admin_user_id=int(_require_env("TELEGRAM_ADMIN_USER_ID")),
-            source_groups=raw["telegram"]["source_groups"],
+            source_groups=[
+                group if isinstance(group, int) else str(group)
+                for group in raw["telegram"]["source_groups"]
+            ],
+            manual_source_groups=[
+                str(group)
+                for group in raw.get("telegram", {}).get("manual_source_groups", [])
+            ],
             admin_chat=raw["telegram"]["admin_chat"],
             channel_link=raw["telegram"].get("channel_link", ""),
         ),
+        marketing=_load_marketing_config(raw, config_file.parent),
         openai=OpenAIConfig(
             api_key=_require_env("OPENAI_API_KEY"),
             model=raw["openai"]["model"],
@@ -263,6 +358,14 @@ def load_config(config_path: str) -> AppConfig:
             min_message_length=raw["parser"]["min_message_length"],
             supported_domains=raw["parser"]["supported_domains"],
         ),
+        quality=QualityConfig(
+            min_score_external=int(raw.get("quality", {}).get("min_score_external", 45)),
+            min_score_hot_products=int(raw.get("quality", {}).get("min_score_hot_products", 60)),
+            manual_priority=int(raw.get("quality", {}).get("manual_priority", 1000)),
+            idle_destination_hours=int(raw.get("quality", {}).get("idle_destination_hours", 6)),
+            idle_min_score=int(raw.get("quality", {}).get("idle_min_score", 20)),
+            idle_priority_boost=int(raw.get("quality", {}).get("idle_priority_boost", 150)),
+        ),
         dashboard=DashboardConfig(
             port=raw["dashboard"]["port"],
             auto_refresh_seconds=raw["dashboard"]["auto_refresh_seconds"],
@@ -271,6 +374,10 @@ def load_config(config_path: str) -> AppConfig:
         whatsapp=WhatsAppConfig(
             service_url=raw.get("whatsapp", {}).get("service_url", "http://localhost:3001"),
             group_link=raw.get("whatsapp", {}).get("group_link", ""),
+        ),
+        facebook=FacebookConfig(
+            service_url=raw.get("facebook", {}).get("service_url", "http://localhost:3002"),
+            landing_page_url=raw.get("facebook", {}).get("landing_page_url", ""),
         ),
         supabase=_load_supabase_config(),
     )

@@ -6,6 +6,6 @@ export default function robots(): MetadataRoute.Robots {
       userAgent: "*",
       allow: "/",
     },
-    sitemap: "https://alibot.vercel.app/sitemap.xml",
+    sitemap: "https://www.dilim.net/sitemap.xml",
   };
 }

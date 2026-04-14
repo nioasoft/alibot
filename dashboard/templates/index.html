@@ -33,7 +33,7 @@
                 <th class="px-4 py-3 text-right">מוצר</th>
                 <th class="px-4 py-3 text-right">מחיר</th>
                 <th class="px-4 py-3 text-right">קטגוריה</th>
-                <th class="px-4 py-3 text-right">יעדים</th>
+                <th class="px-4 py-3 text-right">סטטוס</th>
                 <th class="px-4 py-3 text-right">זמן</th>
             </tr>
         </thead>
@@ -44,17 +44,8 @@
                 <td class="px-4 py-3">{% if deal.price %}{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% else %}—{% endif %}</td>
                 <td class="px-4 py-3">{{ deal.category }}</td>
                 <td class="px-4 py-3">
-                    {% set items = queue_summary.get(deal.id, []) %}
-                    {% if items %}
-                        {% for item in items %}
-                            <div class="text-xs">
-                                <span class="text-gray-500">{{ item.platform }}</span>:
-                                <span class="{% if item.status == 'published' %}text-green-600{% elif item.status == 'queued' %}text-blue-600{% else %}text-gray-500{% endif %}">{{ item.status }}</span>
-                            </div>
-                        {% endfor %}
-                    {% else %}
-                        <span class="text-gray-400">—</span>
-                    {% endif %}
+                    {% set summary = status_summary.get(deal.id, {"label": "—", "class_name": "text-gray-400"}) %}
+                    <span class="text-xs {{ summary.class_name }}">{{ summary.label }}</span>
                 </td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localtime }}</td>
             </tr>

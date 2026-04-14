@@ -4,6 +4,15 @@
 <h2 class="text-lg font-semibold mb-4">כל הדילים</h2>
 <form method="get" class="flex gap-3 mb-4 items-end">
     <div>
+        <label class="block text-sm text-gray-500 mb-1">סטטוס</label>
+        <select name="status" class="border rounded px-3 py-1.5 text-sm">
+            <option value="">הכל</option>
+            <option value="queued" {{ 'selected' if filter_status == 'queued' }}>בתור</option>
+            <option value="published" {{ 'selected' if filter_status == 'published' }}>פורסם</option>
+            <option value="failed" {{ 'selected' if filter_status == 'failed' }}>נכשל</option>
+        </select>
+    </div>
+    <div>
         <label class="block text-sm text-gray-500 mb-1">קטגוריה</label>
         <select name="category" class="border rounded px-3 py-1.5 text-sm">
             <option value="">הכל</option>
@@ -34,11 +43,8 @@
                 <td class="px-4 py-3">{{ deal.category }}</td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.source_group }}</td>
                 <td class="px-4 py-3">
-                    {% for item in queue_summary.get(deal.id, []) %}
-                        <div class="text-xs">{{ item.platform }}: {{ item.status }}</div>
-                    {% else %}
-                        <span class="text-gray-400">—</span>
-                    {% endfor %}
+                    {% set summary = status_summary.get(deal.id, {"label": "—", "class_name": "text-gray-400"}) %}
+                    <span class="text-xs {{ summary.class_name }}">{{ summary.label }}</span>
                 </td>
                 <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localdatetime }}</td>
             </tr>

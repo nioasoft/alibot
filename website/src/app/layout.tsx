@@ -11,7 +11,7 @@ const heebo = Heebo({
 
 const SITE_NAME = "מכורים לדילים ומבצעים";
 const SITE_DESCRIPTION =
-  "קהילת מכורי הדילים והמבצעים - דילים חמים מ-AliExpress, Amazon ועוד. הצטרפו לטלגרם, וואטסאפ ופייסבוק!";
+  "הבית של קבוצות הדילים שלנו: טלגרם, וואטסאפ ופייסבוק, עם הצטרפות מהירה מכל פלטפורמה.";
 
 export const viewport: Viewport = {
   themeColor: "#FF6B00",
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_SITE_URL ??
       (process.env.VERCEL_PROJECT_PRODUCTION_URL
         ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-        : "https://alibot.vercel.app")
+        : "https://www.dilim.net")
   ),
   title: {
     default: `${SITE_NAME} | הדילים הכי טובים מכל הרשת`,
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: SITE_NAME,
-    description: "הדילים הכי טובים, הכי מהר, הכי קל - בקבוצה שלנו!",
+    description: "כל קבוצות הדילים של מכורים לדילים ומבצעים במקום אחד.",
     images: [
       {
         url: "/og-image.jpg",
@@ -58,7 +58,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: SITE_NAME,
-    description: "הדילים הכי טובים, הכי מהר, הכי קל - בקבוצה שלנו!",
+    description: "כל קבוצות הדילים של מכורים לדילים ומבצעים במקום אחד.",
     images: ["/og-image.jpg"],
   },
   robots: {

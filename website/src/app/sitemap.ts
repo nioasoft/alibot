@@ -1,24 +1,15 @@
 import type { MetadataRoute } from "next";
-import { CATEGORY_SLUGS } from "@/lib/categories";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://alibot.vercel.app";
-
-  const categoryPages = CATEGORY_SLUGS.map((slug) => ({
-    url: `${baseUrl}/category/${slug}`,
-    lastModified: new Date(),
-    changeFrequency: "hourly" as const,
-    priority: 0.8,
-  }));
+  const baseUrl = "https://www.dilim.net";
 
   return [
     {
       url: baseUrl,
       lastModified: new Date(),
-      changeFrequency: "hourly",
+      changeFrequency: "daily",
       priority: 1,
     },
-    ...categoryPages,
     {
       url: `${baseUrl}/terms`,
       lastModified: new Date(),

@@ -16,10 +16,12 @@ from telethon import TelegramClient
 from bot.admin import AdminCommands
 from bot.affiliate_pool import AffiliateLinkPool
 from bot.aliexpress_client import AliExpressClient
+from bot.aliexpress_pool import AliExpressClientPool
 from bot.category_resolver import CategoryResolver
 from bot.config import AppConfig, load_config
 from bot.dedup import DuplicateChecker
 from bot.exchange_rate import fetch_usd_ils_rate
+from bot.facebook_publisher import FacebookPublisher
 from bot.hot_products import HotProductFetcher
 from bot.image_processor import ImageProcessor
 from bot.listener import TelegramListener
@@ -28,6 +30,7 @@ from bot.notifier import Notifier
 from bot.parser import DealParser
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
+from bot.quality import QualityGate
 from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
 from bot.router import DestinationRouter
@@ -53,22 +56,31 @@ async def _send_telegram_message(client: TelegramClient, admin_chat: str, text: 
     await client.send_message(admin_chat, text)
 
 
-def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClient | None, AffiliateLinkPool]:
-    clients: dict[str, AliExpressClient] = {}
+def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClientPool, AffiliateLinkPool]:
+    catalog_clients: dict[str, AliExpressClient] = {}
+    affiliate_clients: dict[str, AliExpressClient] = {}
     for key, account in config.aliexpress.accounts.items():
-        clients[key] = AliExpressClient(
+        catalog_clients[key] = AliExpressClient(
+            app_key=account.app_key,
+            app_secret=account.app_secret,
+            tracking_id="",
+            account_key=key,
+            require_tracking_id=False,
+        )
+        affiliate_clients[key] = AliExpressClient(
             app_key=account.app_key,
             app_secret=account.app_secret,
             tracking_id=account.tracking_id,
             account_key=key,
         )
 
-    catalog_client = clients.get(config.aliexpress.catalog_account)
-    if catalog_client is None:
-        catalog_client = clients.get("primary")
+    catalog_client = AliExpressClientPool(
+        clients=catalog_clients,
+        preferred_key=config.aliexpress.catalog_account,
+    )
 
     affiliate_pool = AffiliateLinkPool(
-        clients=clients,
+        clients=affiliate_clients,
         distribution=config.aliexpress.affiliate_distribution,
     )
     return catalog_client, affiliate_pool
@@ -119,6 +131,15 @@ async def main():
     )
     router = DestinationRouter(config.publishing.destinations or {})
     category_resolver = CategoryResolver(rewriter)
+    quality_gate = QualityGate(
+        manual_source_groups=config.telegram.manual_source_groups,
+        min_score_external=config.quality.min_score_external,
+        min_score_hot_products=config.quality.min_score_hot_products,
+        manual_priority=config.quality.manual_priority,
+        idle_destination_hours=config.quality.idle_destination_hours,
+        idle_min_score=config.quality.idle_min_score,
+        idle_priority_boost=config.quality.idle_priority_boost,
+    )
 
     catalog_client, affiliate_pool = _build_aliexpress_clients(config)
 
@@ -134,15 +155,20 @@ async def main():
         notifier=notifier,
         aliexpress_client=catalog_client,
         affiliate_pool=affiliate_pool,
+        quality_gate=quality_gate,
     )
 
     telegram_publisher = TelegramPublisher(
         client=client,
-        channel_link=config.telegram.channel_link,
-        whatsapp_link=config.whatsapp.group_link,
+        site_url=config.marketing.site_url,
+        invite_links=config.marketing.invite_links,
     )
     whatsapp_publisher = WhatsAppPublisher(
         base_url=config.whatsapp.service_url,
+    )
+    facebook_publisher = FacebookPublisher(
+        service_url=config.facebook.service_url,
+        site_url=config.marketing.site_url,
     )
     if config.supabase:
         web_publisher = SupabasePublisher(
@@ -161,9 +187,10 @@ async def main():
         quiet_hours_end=config.publishing.quiet_hours_end,
         telegram_publisher=telegram_publisher,
         whatsapp_publisher=whatsapp_publisher,
+        facebook_publisher=facebook_publisher,
         web_publisher=web_publisher,
-        channel_link=config.telegram.channel_link,
-        whatsapp_link=config.whatsapp.group_link,
+        site_url=config.marketing.site_url,
+        invite_links=config.marketing.invite_links,
     )
 
     admin = AdminCommands(
@@ -190,6 +217,7 @@ async def main():
         category_resolver=category_resolver,
         affiliate_pool=affiliate_pool,
         max_products_per_run=config.publishing.hot_products_per_run,
+        quality_gate=quality_gate,
     )
 
     scheduler = AsyncIOScheduler()

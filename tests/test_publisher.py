@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from bot.config import InviteLinkConfig
 from bot.models import Deal, PublishQueueItem, RawMessage
 from bot.publisher import DealPublisher
 
@@ -57,6 +58,9 @@ def publisher(db_session):
     whatsapp = MagicMock()
     whatsapp.send_deal = AsyncMock(return_value=True)
 
+    facebook = MagicMock()
+    facebook.send_deal = AsyncMock(return_value=True)
+
     web = MagicMock()
     web.send_deal = AsyncMock(return_value=True)
 
@@ -69,7 +73,17 @@ def publisher(db_session):
         quiet_hours_end=7,
         telegram_publisher=telegram,
         whatsapp_publisher=whatsapp,
+        facebook_publisher=facebook,
         web_publisher=web,
+        site_url="https://www.dilim.net/",
+        invite_links=[
+            InviteLinkConfig(
+                url="https://t.me/test",
+                label="ערוץ הטלגרם",
+                platform="telegram",
+                footer_label="📢 להצטרפות לטלגרם",
+            )
+        ],
     )
 
 
@@ -88,6 +102,38 @@ class TestQueuePicking:
         db_session.commit()
 
         assert publisher.pick_next() is None
+
+    def test_prefers_target_that_has_been_idle_longer_when_priority_is_equal(
+        self, publisher: DealPublisher, db_session
+    ):
+        _, qi1 = _seed_deal(db_session, deal_id=10, platform="whatsapp", target_ref="group-a")
+        _, qi2 = _seed_deal(db_session, deal_id=11, platform="whatsapp", target_ref="group-b")
+        _, published = _seed_deal(db_session, deal_id=12, platform="whatsapp", target_ref="group-a")
+
+        qi1.priority = 50
+        qi2.priority = 50
+        qi1.scheduled_after = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
+        qi2.scheduled_after = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=10)
+        published.status = "published"
+        published.published_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=1)
+        db_session.commit()
+
+        next_item = publisher.pick_next()
+        assert next_item is not None
+        assert next_item.target_ref == "group-b"
+
+
+class TestSocialFooter:
+    def test_build_social_text_adds_rotating_invite_and_domain(
+        self, publisher: DealPublisher, db_session
+    ):
+        deal, _ = _seed_deal(db_session, deal_id=77, platform="whatsapp", target_ref="120@g.us")
+
+        text = publisher._build_social_text(deal)
+
+        assert "🛒 לרכישה: https://aliexpress.com/item/123.html" in text
+        assert "📢 להצטרפות לטלגרם: https://t.me/test" in text
+        assert text.endswith("🌐 להצטרפות לכל הקבוצות: https://www.dilim.net/")
 
 
 class TestQuietHours:
@@ -133,3 +179,18 @@ class TestPublishExecution:
         assert qi.status == "published"
         assert qi.message_id is None
         publisher._whatsapp.send_deal.assert_awaited_once()
+
+    async def test_publish_facebook_item_marks_published(self, publisher: DealPublisher, db_session):
+        deal, qi = _seed_deal(
+            db_session,
+            deal_id=3,
+            platform="facebook",
+            target_ref="https://www.facebook.com/groups/test",
+        )
+
+        await publisher.publish_one(qi, deal)
+
+        db_session.refresh(qi)
+        assert qi.status == "published"
+        assert qi.message_id is None
+        publisher._facebook.send_deal.assert_awaited_once()

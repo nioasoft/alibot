@@ -29,18 +29,76 @@ class ProductDetails:
     title: str
     price: float
     sale_price: Optional[float]
+    app_sale_price: Optional[float]
     currency: str
     images: list[str]  # HD image URLs
     rating: Optional[float]
     orders_count: Optional[int]
     commission_rate: Optional[float]
     category: Optional[str]
+    promo_codes: list["PromoCode"]
+
+
+@dataclass(frozen=True)
+class PromoCode:
+    code: str
+    value: Optional[str] = None
+    minimum_spend: Optional[str] = None
+    promotion_url: Optional[str] = None
+
+
+def extract_promo_codes(raw) -> list[PromoCode]:
+    if not raw:
+        return []
+
+    items = raw if isinstance(raw, (list, tuple)) else [raw]
+    promo_codes: list[PromoCode] = []
+    seen: set[str] = set()
+
+    for item in items:
+        code = getattr(item, "promo_code", None) or getattr(item, "code", None)
+        if not code:
+            continue
+        code = str(code).strip().upper()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        promo_codes.append(
+            PromoCode(
+                code=code,
+                value=(str(getattr(item, "code_value", "")).strip() or None),
+                minimum_spend=(str(getattr(item, "code_mini_spend", "")).strip() or None),
+                promotion_url=(str(getattr(item, "code_promotionurl", "")).strip() or None),
+            )
+        )
+
+    return promo_codes
+
+
+def select_best_sale_price(
+    sale_price: Optional[float],
+    app_sale_price: Optional[float],
+) -> Optional[float]:
+    prices = [price for price in (sale_price, app_sale_price) if price and price > 0]
+    if not prices:
+        return None
+    return min(prices)
 
 
 class AliExpressClient:
-    def __init__(self, app_key: str, app_secret: str, tracking_id: str, account_key: str = "primary"):
+    def __init__(
+        self,
+        app_key: str,
+        app_secret: str,
+        tracking_id: str,
+        account_key: str = "primary",
+        require_tracking_id: bool = True,
+        country: str = "IL",
+    ):
         self.account_key = account_key
-        self._enabled = bool(app_key and app_secret and tracking_id)
+        self._require_tracking_id = require_tracking_id
+        self._country = country
+        self._enabled = bool(app_key and app_secret and (tracking_id or not require_tracking_id))
 
         if self._enabled and HAS_ALI_API:
             self._api = AliexpressApi(
@@ -55,7 +113,7 @@ class AliExpressClient:
             self._api = None
             if not self._enabled:
                 logger.warning(
-                    "AliExpress API credentials not configured — affiliate links disabled"
+                    f"AliExpress API credentials not configured for account '{self.account_key}'"
                 )
             elif not HAS_ALI_API:
                 logger.warning(
@@ -87,12 +145,14 @@ class AliExpressClient:
                     logger.debug(f"Affiliate link generated: {str(promo)[:50]}...")
                     return str(promo)
                 msg = getattr(result, "message", "unknown reason")
-                logger.warning(f"No affiliate link for {product_url}: {msg}")
+                logger.warning(
+                    f"No affiliate link for {product_url} on account '{self.account_key}': {msg}"
+                )
                 return None
-            logger.warning(f"No affiliate link returned for: {product_url}")
+            logger.warning(f"No affiliate link returned for {product_url} on account '{self.account_key}'")
             return None
         except Exception as e:
-            logger.error(f"Failed to generate affiliate link: {e}")
+            logger.error(f"Failed to generate affiliate link on account '{self.account_key}': {e}")
             return None
 
     def get_product_details(self, product_id: str) -> Optional[ProductDetails]:
@@ -108,9 +168,9 @@ class AliExpressClient:
             return None
 
         try:
-            products = self._api.get_products_details([product_id])
+            products = self._api.get_products_details([product_id], country=self._country)
             if not products or len(products) == 0:
-                logger.warning(f"No product found for ID: {product_id}")
+                logger.warning(f"No product found for ID {product_id} on account '{self.account_key}'")
                 return None
 
             p = products[0]
@@ -127,15 +187,21 @@ class AliExpressClient:
                 title=getattr(p, "product_title", ""),
                 price=float(getattr(p, "target_original_price", 0) or 0),
                 sale_price=float(getattr(p, "target_sale_price", 0) or 0) or None,
+                app_sale_price=float(getattr(p, "target_app_sale_price", 0) or 0) or None,
                 currency=getattr(p, "target_original_price_currency", "ILS"),
                 images=images,
                 rating=_safe_float(getattr(p, "evaluate_rate", 0)),
                 orders_count=int(getattr(p, "lastest_volume", 0) or 0) or None,
                 commission_rate=_safe_float(getattr(p, "commission_rate", 0)),
                 category=getattr(p, "first_level_category_name", None),
+                promo_codes=extract_promo_codes(
+                    getattr(p, "promo_code_info", None) or getattr(p, "promoCodeInfo", None)
+                ),
             )
         except Exception as e:
-            logger.error(f"Failed to get product details for {product_id}: {e}")
+            logger.error(
+                f"Failed to get product details for {product_id} on account '{self.account_key}': {e}"
+            )
             return None
 
     def search_products(
@@ -167,13 +233,14 @@ class AliExpressClient:
                 min_sale_price=min_sale_price,
                 max_sale_price=max_sale_price,
                 page_size=page_size,
+                ship_to_country=self._country,
                 sort=sort,
             )
             if result and hasattr(result, "products") and result.products:
                 return result.products
             return []
         except Exception as e:
-            logger.error(f"Product search failed for '{keywords}': {e}")
+            logger.error(f"Product search failed for '{keywords}' on account '{self.account_key}': {e}")
             return []
 
     def download_image(self, image_url: str) -> Optional[bytes]:

@@ -10,7 +10,17 @@ from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from bot.config import InviteLinkConfig
+from bot.footer_links import FooterLinkBuilder
 from bot.models import DailyStat, Deal, PublishQueueItem
+
+
+def _as_utc(dt: datetime.datetime | None) -> datetime.datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
 
 
 class DealPublisher:
@@ -24,9 +34,10 @@ class DealPublisher:
         quiet_hours_end: int,
         telegram_publisher=None,
         whatsapp_publisher=None,
+        facebook_publisher=None,
         web_publisher=None,
-        channel_link: str = "",
-        whatsapp_link: str = "",
+        site_url: str = "",
+        invite_links: list[InviteLinkConfig] | None = None,
     ):
         self._session = session
         self._min_delay = min_delay
@@ -36,14 +47,17 @@ class DealPublisher:
         self._quiet_end = quiet_hours_end
         self._telegram = telegram_publisher
         self._whatsapp = whatsapp_publisher
+        self._facebook = facebook_publisher
         self._web = web_publisher
-        self._channel_link = channel_link
-        self._whatsapp_link = whatsapp_link
+        self._footer_links = FooterLinkBuilder(
+            site_url=site_url,
+            invite_links=invite_links,
+        )
         self.paused = False
 
     def pick_next(self) -> Optional[PublishQueueItem]:
         now = datetime.datetime.now(datetime.UTC)
-        return self._session.execute(
+        candidates = self._session.execute(
             select(PublishQueueItem)
             .where(
                 PublishQueueItem.status == "queued",
@@ -53,8 +67,34 @@ class DealPublisher:
                 PublishQueueItem.priority.desc(),
                 PublishQueueItem.scheduled_after.asc(),
             )
-            .limit(1)
-        ).scalar_one_or_none()
+            .limit(200)
+        ).scalars().all()
+
+        if not candidates:
+            return None
+
+        target_refs = {item.target_ref for item in candidates}
+        last_published_by_target = {
+            target_ref: self._session.execute(
+                select(func.max(PublishQueueItem.published_at)).where(
+                    PublishQueueItem.target_ref == target_ref,
+                    PublishQueueItem.status == "published",
+                )
+            ).scalar_one()
+            for target_ref in target_refs
+        }
+
+        def ranking(item: PublishQueueItem) -> tuple[int, float, float]:
+            last_published = _as_utc(last_published_by_target.get(item.target_ref))
+            if last_published is None:
+                idle_hours = 999.0
+            else:
+                idle_hours = (now - last_published).total_seconds() / 3600
+            scheduled_after = _as_utc(item.scheduled_after) or now
+            age_seconds = (now - scheduled_after).total_seconds()
+            return (item.priority, idle_hours, age_seconds)
+
+        return max(candidates, key=ranking)
 
     def is_quiet_hour(self, now: Optional[datetime.datetime] = None) -> bool:
         if now is None:
@@ -79,14 +119,8 @@ class DealPublisher:
 
     def _build_social_text(self, deal: Deal) -> str:
         link = deal.affiliate_link or deal.product_link
-        text = f"{deal.rewritten_text}\n\n🛒 לרכישה: {link}"
-        if self._channel_link or self._whatsapp_link:
-            text += "\n\n📢 הצטרפו אלינו:"
-            if self._channel_link:
-                text += f"\nטלגרם: {self._channel_link}"
-            if self._whatsapp_link:
-                text += f"\nוואטסאפ: {self._whatsapp_link}"
-        return text
+        footer = self._footer_links.build_footer(link, deal.id)
+        return f"{deal.rewritten_text}\n\n{footer}"
 
     async def publish_one(self, queue_item: PublishQueueItem, deal: Deal) -> None:
         queue_item.status = "publishing"
@@ -103,6 +137,7 @@ class DealPublisher:
                     target_ref=queue_item.target_ref,
                     text=deal.rewritten_text,
                     link=link,
+                    deal_id=deal.id,
                     image_path=deal.image_path,
                 )
             elif queue_item.platform == "whatsapp":
@@ -121,6 +156,12 @@ class DealPublisher:
                 ok = await self._web.send_deal(queue_item.target_ref, deal)
                 if not ok:
                     raise RuntimeError("Web publish failed")
+            elif queue_item.platform == "facebook":
+                if self._facebook is None:
+                    raise RuntimeError("Facebook publisher is not configured")
+                ok = await self._facebook.send_deal(deal=deal, group_url=queue_item.target_ref)
+                if not ok:
+                    raise RuntimeError("Facebook send failed")
             else:
                 raise RuntimeError(f"Unsupported platform '{queue_item.platform}'")
 

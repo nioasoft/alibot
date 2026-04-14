@@ -41,6 +41,26 @@ class TestLinkExtraction:
         assert result is not None
         assert result.link == "https://a.aliexpress.com/_mK1abc2"
 
+    def test_extracts_user_notes_without_link(self, parser: DealParser):
+        text = (
+            "אלה מכנסי ספורט https://www.aliexpress.com/item/1005003091506814.html "
+            "אני רוצה שתכתוב שהם מתאימים לאימון וליום יום"
+        )
+        result = parser.parse(text)
+        assert result is not None
+        assert result.user_notes is not None
+        assert "1005003091506814" not in result.user_notes
+        assert "מתאימים לאימון" in result.user_notes
+
+    def test_extracts_multiple_coupon_codes(self, parser: DealParser):
+        text = (
+            "דיל מטורף https://s.click.aliexpress.com/e/_abc123\n"
+            "קוד הנחה: `ILAPR2` או `DSB2`"
+        )
+        result = parser.parse(text)
+        assert result is not None
+        assert result.coupon_codes == ["ILAPR2", "DSB2"]
+
 
 class TestPriceExtraction:
     def test_extract_price_ils_symbol(self, parser: DealParser):
@@ -102,3 +122,12 @@ class TestShippingExtraction:
         result = parser.parse(text)
         assert result is not None
         assert result.shipping == "חינם"
+
+    def test_extract_shipping_tags(self, parser: DealParser):
+        text = (
+            "Camera https://s.click.aliexpress.com/e/_abc משלוח חינם "
+            "עם משלוח מהיר מהמחסן הישראלי"
+        )
+        result = parser.parse(text)
+        assert result is not None
+        assert result.shipping_tags == ["משלוח חינם", "משלוח מהיר", "מחסן ישראל"]

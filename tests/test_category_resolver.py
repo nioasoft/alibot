@@ -35,3 +35,35 @@ async def test_category_resolver_falls_back_to_llm():
 
     assert result.category == "sports"
     assert result.source == "llm_fallback"
+
+
+@pytest.mark.asyncio
+async def test_category_resolver_overrides_sports_entertainment_garden_repeller_to_home():
+    classifier = AsyncMock()
+    classifier.classify_category.return_value = "sports"
+    resolver = CategoryResolver(classifier)
+
+    result = await resolver.resolve(
+        product_name="Spikes Repeller Cat Plastic Bird Repellent",
+        original_text="דוקרנים להרחקת חתולים, יונים ומזיקים מהגינה/מרפסת",
+        ali_category_raw="Sports & Entertainment",
+    )
+
+    assert result.category == "home"
+    assert result.source == "api_override"
+
+
+@pytest.mark.asyncio
+async def test_category_resolver_keeps_real_sports_items_in_sports():
+    classifier = AsyncMock()
+    classifier.classify_category.return_value = "other"
+    resolver = CategoryResolver(classifier)
+
+    result = await resolver.resolve(
+        product_name="Resistance Bands Set for Training",
+        original_text="fitness gear for workout and exercise",
+        ali_category_raw="Sports & Entertainment",
+    )
+
+    assert result.category == "sports"
+    assert result.source == "api"

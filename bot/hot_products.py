@@ -10,13 +10,17 @@ from typing import Optional
 
 import httpx
 from loguru import logger
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from bot.affiliate_pool import AffiliateLinkPool
+from bot.aliexpress_client import extract_promo_codes, select_best_sale_price
 from bot.category_resolver import CategoryResolver
 from bot.exchange_rate import get_cached_rate
 from bot.image_processor import compute_image_hash
 from bot.models import Deal, PublishQueueItem, RawMessage
+from bot.quality import QualityGate
 from bot.rewriter import ContentRewriter
 from bot.router import DestinationRouter
 
@@ -63,6 +67,22 @@ SEARCH_STRATEGIES = [
 _IMAGE_DIR = Path("data/images")
 
 
+def _is_duplicate_integrity_error(exc: IntegrityError) -> bool:
+    message = str(getattr(exc, "orig", exc))
+    return (
+        "UNIQUE constraint failed: deals.product_id" in message
+        or "UNIQUE constraint failed: publish_queue.deal_id, publish_queue.destination_key" in message
+    )
+
+
+def _as_utc(dt: datetime.datetime | None) -> datetime.datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
+
+
 class HotProductFetcher:
     def __init__(
         self,
@@ -74,6 +94,7 @@ class HotProductFetcher:
         category_resolver: CategoryResolver,
         affiliate_pool: AffiliateLinkPool | None,
         max_products_per_run: int = 3,
+        quality_gate: QualityGate | None = None,
     ) -> None:
         self._api = ali_api
         self._rewriter = rewriter
@@ -83,6 +104,7 @@ class HotProductFetcher:
         self._category_resolver = category_resolver
         self._affiliate_pool = affiliate_pool
         self._max_per_run = max_products_per_run
+        self._quality_gate = quality_gate
 
     async def fetch_and_queue(self) -> int:
         if not self._api.is_enabled:
@@ -127,7 +149,14 @@ class HotProductFetcher:
                 deal = await self._process_product(product)
                 if deal:
                     queued += 1
+            except IntegrityError as e:
+                self._session.rollback()
+                if _is_duplicate_integrity_error(e):
+                    logger.info(f"Hot product {product_id} hit duplicate constraint, skipping")
+                    continue
+                logger.error(f"Hot product integrity error {product_id}: {e}")
             except Exception as e:
+                self._session.rollback()
                 logger.error(f"Failed to process hot product {product_id}: {e}")
 
         logger.info(f"Hot products run complete: {queued} queued from query '{query}'")
@@ -137,12 +166,17 @@ class HotProductFetcher:
         product_id = str(getattr(product, "product_id", "") or "")
         title = str(getattr(product, "product_title", "") or "Unknown Product")
         sale_price = float(getattr(product, "target_sale_price", 0) or 0)
+        app_sale_price = float(getattr(product, "target_app_sale_price", 0) or 0) or None
         original_price = float(getattr(product, "target_original_price", 0) or 0)
         orders = int(getattr(product, "lastest_volume", 0) or 0)
         discount = str(getattr(product, "discount", "") or "")
         image_url = str(getattr(product, "product_main_image_url", "") or "")
         ali_category_raw = str(getattr(product, "first_level_category_name", "") or "") or None
         product_url = f"https://www.aliexpress.com/item/{product_id}.html"
+        promo_codes = extract_promo_codes(
+            getattr(product, "promo_code_info", None) or getattr(product, "promoCodeInfo", None)
+        )
+        display_price = select_best_sale_price(sale_price, app_sale_price) or sale_price
 
         affiliate_link = None
         affiliate_account_key = None
@@ -164,9 +198,36 @@ class HotProductFetcher:
             ali_category_raw=ali_category_raw,
         )
 
+        destinations = self._router.resolve(category_resolution.category)
+        if not destinations:
+            logger.info(f"No destinations configured for hot product category {category_resolution.category}")
+            return None
+
+        quality_decision = None
+        if self._quality_gate is not None:
+            idle_override = self._has_idle_destination(
+                destinations,
+                hours=self._quality_gate.idle_destination_hours,
+            )
+            quality_decision = self._quality_gate.evaluate_hot_product(
+                orders=orders,
+                original_price=original_price,
+                sale_price=display_price,
+                has_image=bool(image_url),
+                category_source=category_resolution.source,
+                affiliate_link_ready=bool(affiliate_link),
+                idle_override=idle_override,
+            )
+            if not quality_decision.accepted:
+                logger.info(
+                    f"Skipping low-quality hot product {product_id}: "
+                    f"score={quality_decision.score} reason={quality_decision.reason}"
+                )
+                return None
+
         rewrite_result = await self._rewriter.rewrite(
             product_name=title,
-            price=sale_price,
+            price=display_price,
             currency="USD",
             shipping=None,
             original_text=(
@@ -178,6 +239,13 @@ class HotProductFetcher:
             rating=None,
             sales_count=orders,
             usd_ils_rate=get_cached_rate(),
+        )
+        rewritten_text = self._rewriter.finalize_text(
+            rewrite_result.rewritten_text,
+            price=display_price,
+            currency="USD",
+            usd_ils_rate=get_cached_rate(),
+            promo_codes=promo_codes,
         )
 
         image_path: Optional[str] = None
@@ -214,8 +282,8 @@ class HotProductFetcher:
             product_id=product_id,
             product_name=rewrite_result.product_name_clean,
             original_text=f"[Hot Product] {title}",
-            rewritten_text=rewrite_result.rewritten_text,
-            price=sale_price,
+            rewritten_text=rewritten_text,
+            price=display_price,
             original_price=original_price if original_price > sale_price else None,
             currency="USD",
             category=category_resolution.category,
@@ -238,7 +306,6 @@ class HotProductFetcher:
             Path(image_path).rename(new_path)
             deal.image_path = str(new_path)
 
-        destinations = self._router.resolve(category_resolution.category)
         for destination in destinations:
             self._session.add(
                 PublishQueueItem(
@@ -248,6 +315,7 @@ class HotProductFetcher:
                     platform=destination.platform,
                     target_ref=destination.target,
                     status="queued",
+                    priority=quality_decision.priority if quality_decision else 0,
                     scheduled_after=datetime.datetime.now(datetime.UTC),
                 )
             )
@@ -259,6 +327,20 @@ class HotProductFetcher:
             f"(${sale_price}, category={category_resolution.category}, destinations={len(destinations)})"
         )
         return deal
+
+    def _has_idle_destination(self, destinations: list, hours: int) -> bool:
+        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=hours)
+        for destination in destinations:
+            last_published = self._session.execute(
+                select(func.max(PublishQueueItem.published_at)).where(
+                    PublishQueueItem.target_ref == destination.target,
+                    PublishQueueItem.status == "published",
+                )
+            ).scalar_one()
+            last_published = _as_utc(last_published)
+            if last_published is None or last_published < threshold:
+                return True
+        return False
 
 
 def _download_image(url: str) -> Optional[bytes]:

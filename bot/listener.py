@@ -17,7 +17,7 @@ class TelegramListener:
     def __init__(
         self,
         client: TelegramClient,
-        source_groups: list[str],
+        source_groups: list[str | int],
         min_message_length: int,
         pipeline: Pipeline,
         admin: AdminCommands,

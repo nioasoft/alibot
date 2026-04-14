@@ -8,16 +8,19 @@ from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from bot.affiliate_pool import AffiliateLinkPool
-from bot.aliexpress_client import AliExpressClient
+from bot.aliexpress_client import AliExpressClient, select_best_sale_price
 from bot.category_resolver import CategoryResolver
 from bot.dedup import DuplicateChecker
 from bot.exchange_rate import get_cached_rate
 from bot.image_processor import ImageProcessor, compute_image_hash
 from bot.models import DailyStat, Deal, PublishQueueItem, RawMessage
 from bot.parser import DealParser
+from bot.quality import QualityGate
 from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
 from bot.router import DestinationRouter
@@ -27,6 +30,22 @@ def _canonical_product_url(product_id: str | None, fallback_url: str) -> str:
     if product_id:
         return f"https://www.aliexpress.com/item/{product_id}.html"
     return fallback_url
+
+
+def _is_duplicate_integrity_error(exc: IntegrityError) -> bool:
+    message = str(getattr(exc, "orig", exc))
+    return (
+        "UNIQUE constraint failed: deals.product_id" in message
+        or "UNIQUE constraint failed: publish_queue.deal_id, publish_queue.destination_key" in message
+    )
+
+
+def _as_utc(dt: datetime.datetime | None) -> datetime.datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.UTC)
+    return dt.astimezone(datetime.UTC)
 
 
 class Pipeline:
@@ -44,6 +63,7 @@ class Pipeline:
         image_dir: str = "data/images",
         aliexpress_client: Optional[AliExpressClient] = None,
         affiliate_pool: Optional[AffiliateLinkPool] = None,
+        quality_gate: Optional[QualityGate] = None,
     ):
         self._parser = parser
         self._dedup = dedup
@@ -57,6 +77,7 @@ class Pipeline:
         self._image_dir = Path(image_dir)
         self._ali_client = aliexpress_client
         self._affiliate_pool = affiliate_pool
+        self._quality_gate = quality_gate
 
     async def process(
         self,
@@ -77,17 +98,46 @@ class Pipeline:
         self._session.flush()
 
         self._increment_stat("deals_seen")
+        self._session.commit()
+        raw_id = raw.id
 
         try:
             deal = await self._process_stages(raw, text, images, source_group)
             raw.status = "processed"
             self._session.commit()
             return deal
-        except Exception as e:
-            raw.status = "failed"
-            raw.error_message = str(e)[:500]
-            self._session.commit()
+        except IntegrityError as e:
+            self._session.rollback()
+            if _is_duplicate_integrity_error(e):
+                raw = self._session.get(RawMessage, raw_id)
+                if raw is not None:
+                    raw.status = "skipped_duplicate"
+                    raw.error_message = str(e)[:500]
+                self._increment_stat("deals_skipped_dup")
+                self._session.commit()
+                logger.info(
+                    f"Duplicate deal hit DB constraint for message {telegram_message_id}, skipping"
+                )
+                return None
+
+            raw = self._session.get(RawMessage, raw_id)
+            if raw is not None:
+                raw.status = "failed"
+                raw.error_message = str(e)[:500]
             self._increment_stat("deals_skipped_error")
+            self._session.commit()
+            logger.error(f"Pipeline integrity error for message {telegram_message_id}: {e}")
+            if hasattr(self._notifier, "notify_error"):
+                await self._notifier.notify_error(f"Pipeline integrity error: {e}")
+            return None
+        except Exception as e:
+            self._session.rollback()
+            raw = self._session.get(RawMessage, raw_id)
+            if raw is not None:
+                raw.status = "failed"
+                raw.error_message = str(e)[:500]
+            self._increment_stat("deals_skipped_error")
+            self._session.commit()
             logger.error(f"Pipeline error for message {telegram_message_id}: {e}")
             if hasattr(self._notifier, "notify_error"):
                 await self._notifier.notify_error(f"Pipeline error: {e}")
@@ -144,10 +194,53 @@ class Pipeline:
             ali_category_raw=ali_details.category if ali_details else None,
         )
 
+        destinations = self._router.resolve(category_resolution.category)
+        if not destinations:
+            logger.info(f"No destinations configured for category {category_resolution.category}, skipping")
+            return None
+
+        affiliate_link = None
+        affiliate_account_key = None
+        if self._affiliate_pool:
+            affiliate_link, affiliate_account_key = self._affiliate_pool.get_affiliate_link(
+                product_url,
+                seed=product_id or product_url,
+            )
+
+        quality_decision = None
+        if self._quality_gate is not None:
+            idle_override = self._has_idle_destination(
+                destinations,
+                hours=self._quality_gate.idle_destination_hours,
+            )
+            quality_decision = self._quality_gate.evaluate_pipeline(
+                source_group=source_group,
+                ali_details=ali_details,
+                category_source=category_resolution.source,
+                affiliate_link_ready=bool(affiliate_link),
+                has_image=bool(images),
+                idle_override=idle_override,
+            )
+            if not quality_decision.accepted:
+                logger.info(
+                    f"Skipping low-quality deal from {source_group}: "
+                    f"score={quality_decision.score} reason={quality_decision.reason}"
+                )
+                return None
+
+        display_sale_price = (
+            select_best_sale_price(
+                ali_details.sale_price if ali_details else None,
+                ali_details.app_sale_price if ali_details else None,
+            )
+            if ali_details
+            else None
+        )
+
         rewrite_price = None
         rewrite_currency = parsed.currency
-        if ali_details and (ali_details.sale_price or ali_details.price):
-            rewrite_price = ali_details.sale_price or ali_details.price
+        if ali_details and (display_sale_price or ali_details.price):
+            rewrite_price = display_sale_price or ali_details.price
             rewrite_currency = ali_details.currency or "USD"
         elif parsed.price:
             rewrite_price = parsed.price
@@ -158,9 +251,19 @@ class Pipeline:
             currency=rewrite_currency,
             shipping=parsed.shipping,
             original_text=text,
+            user_notes=parsed.user_notes,
             rating=ali_details.rating if ali_details else None,
             sales_count=ali_details.orders_count if ali_details else None,
             usd_ils_rate=get_cached_rate(),
+        )
+        rewritten_text = self._rewriter.finalize_text(
+            rewrite_result.rewritten_text,
+            price=rewrite_price,
+            currency=rewrite_currency,
+            usd_ils_rate=get_cached_rate(),
+            shipping_tags=parsed.shipping_tags,
+            coupon_codes=parsed.coupon_codes,
+            promo_codes=ali_details.promo_codes if ali_details else [],
         )
 
         processed_images: list[bytes] = []
@@ -173,28 +276,20 @@ class Pipeline:
 
         final_price = None
         final_currency = parsed.currency or "ILS"
-        if ali_details and (ali_details.sale_price or ali_details.price):
-            final_price = ali_details.sale_price or ali_details.price
+        if ali_details and (display_sale_price or ali_details.price):
+            final_price = display_sale_price or ali_details.price
             final_currency = ali_details.currency or "USD"
         elif parsed.price:
             final_price = parsed.price
-
-        affiliate_link = None
-        affiliate_account_key = None
-        if self._affiliate_pool:
-            affiliate_link, affiliate_account_key = self._affiliate_pool.get_affiliate_link(
-                product_url,
-                seed=product_id or product_url,
-            )
 
         deal = Deal(
             raw_message_id=raw.id,
             product_id=product_id,
             product_name=rewrite_result.product_name_clean,
             original_text=text,
-            rewritten_text=rewrite_result.rewritten_text,
+            rewritten_text=rewritten_text,
             price=final_price or 0.0,
-            original_price=parsed.original_price,
+            original_price=parsed.original_price or (ali_details.price if ali_details and ali_details.price > (final_price or 0) else None),
             currency=final_currency,
             shipping=parsed.shipping,
             category=category_resolution.category,
@@ -217,7 +312,6 @@ class Pipeline:
             img_path.write_bytes(processed_images[0])
             deal.image_path = str(img_path)
 
-        destinations = self._router.resolve(category_resolution.category)
         for destination in destinations:
             self._session.add(
                 PublishQueueItem(
@@ -227,6 +321,7 @@ class Pipeline:
                     platform=destination.platform,
                     target_ref=destination.target,
                     status="queued",
+                    priority=quality_decision.priority if quality_decision else 0,
                     scheduled_after=datetime.datetime.now(datetime.UTC),
                 )
             )
@@ -240,6 +335,20 @@ class Pipeline:
         )
 
         return deal
+
+    def _has_idle_destination(self, destinations: list, hours: int) -> bool:
+        threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=hours)
+        for destination in destinations:
+            last_published = self._session.execute(
+                select(func.max(PublishQueueItem.published_at)).where(
+                    PublishQueueItem.target_ref == destination.target,
+                    PublishQueueItem.status == "published",
+                )
+            ).scalar_one()
+            last_published = _as_utc(last_published)
+            if last_published is None or last_published < threshold:
+                return True
+        return False
 
     def _increment_stat(self, field: str) -> None:
         today = datetime.date.today()

@@ -7,9 +7,16 @@ telegram:
     - "@https1_Onlineshopping"
     - "@OfficialKBT"
     - "@IsraelSmartBuy"
+    - -5088840057
+  manual_source_groups:
+    - "הכנסת דילים ידנית"
 
   admin_chat: "me"
   channel_link: "https://t.me/hadilimshelisrael"
+
+marketing:
+  site_url: "https://www.dilim.net/"
+  invite_links_path: "website/src/data/invite-links.json"
 
 openai:
   model: "gpt-4o-mini"
@@ -32,6 +39,31 @@ publishing:
       enabled: true
       platform: "whatsapp"
       target: "120363426624009388@g.us"
+      categories: ["other", "toys", "auto"]
+    wa_tech:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363427270625443@g.us"
+      categories: ["tech"]
+    wa_home:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363408265209935@g.us"
+      categories: ["home"]
+    wa_style:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363427097134120@g.us"
+      categories: ["fashion", "sports"]
+    wa_beauty:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363408711395449@g.us"
+      categories: ["beauty"]
+    fb_main:
+      enabled: false
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/354824431284295"
       categories: ["*"]
     web_feed:
       enabled: true
@@ -56,6 +88,14 @@ parser:
     - "s.click.aliexpress.com"
     - "a.aliexpress.com"
 
+quality:
+  min_score_external: 45
+  min_score_hot_products: 60
+  manual_priority: 1000
+  idle_destination_hours: 6
+  idle_min_score: 20
+  idle_priority_boost: 150
+
 dashboard:
   port: 8080
   auto_refresh_seconds: 30
@@ -63,9 +103,13 @@ dashboard:
 aliexpress:
   catalog_account: "primary"
   affiliate_distribution:
-    primary: 100
-    secondary: 0
+    primary: 70
+    secondary: 30
 
 whatsapp:
   service_url: "http://localhost:3001"
   group_link: "https://did.li/qhcsl"
+
+facebook:
+  service_url: "http://localhost:3002"
+  landing_page_url: "https://www.dilim.net/"

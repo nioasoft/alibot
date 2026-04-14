@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+from collections import Counter
 
 from fastapi import FastAPI, Request
 from sqlalchemy import func, select
@@ -25,6 +26,46 @@ def _queue_summary(session, deal_ids: list[int]) -> dict[int, list[PublishQueueI
     for row in rows:
         summary.setdefault(row.deal_id, []).append(row)
     return summary
+
+
+def _status_summary(queue_items: list[PublishQueueItem]) -> dict[str, str]:
+    if not queue_items:
+        return {"label": "—", "class_name": "text-gray-400"}
+
+    counts = Counter(item.status for item in queue_items)
+    parts: list[str] = []
+
+    if counts["published"]:
+        parts.append(f"✅ {counts['published']} פורסם")
+    if counts["queued"]:
+        parts.append(f"⏳ {counts['queued']} בתור")
+    if counts["failed"]:
+        parts.append(f"⚠️ {counts['failed']} נכשל")
+
+    for status, count in sorted(counts.items()):
+        if status in {"published", "queued", "failed"}:
+            continue
+        parts.append(f"{status}: {count}")
+
+    if counts["queued"]:
+        class_name = "text-blue-600"
+    elif counts["published"] and not counts["failed"]:
+        class_name = "text-green-600"
+    elif counts["failed"]:
+        class_name = "text-red-600"
+    else:
+        class_name = "text-gray-500"
+
+    return {"label": " · ".join(parts), "class_name": class_name}
+
+
+def _status_summary_map(
+    queue_summary: dict[int, list[PublishQueueItem]],
+) -> dict[int, dict[str, str]]:
+    return {
+        deal_id: _status_summary(items)
+        for deal_id, items in queue_summary.items()
+    }
 
 
 def register_routes(app: FastAPI) -> None:
@@ -58,6 +99,7 @@ def register_routes(app: FastAPI) -> None:
                 select(Deal).order_by(Deal.created_at.desc()).limit(20)
             ).scalars().all()
             queue_summary = _queue_summary(session, [deal.id for deal in recent_deals])
+            status_summary = _status_summary_map(queue_summary)
 
             return templates.TemplateResponse(
                 request,
@@ -67,6 +109,7 @@ def register_routes(app: FastAPI) -> None:
                     "queue_count": queue_count,
                     "recent_deals": recent_deals,
                     "queue_summary": queue_summary,
+                    "status_summary": status_summary,
                     "auto_refresh": config.dashboard.auto_refresh_seconds,
                 },
             )
@@ -80,6 +123,15 @@ def register_routes(app: FastAPI) -> None:
 
         try:
             query = select(Deal)
+            if status:
+                query = query.where(
+                    select(PublishQueueItem.id)
+                    .where(
+                        PublishQueueItem.deal_id == Deal.id,
+                        PublishQueueItem.status == status,
+                    )
+                    .exists()
+                )
             if category:
                 query = query.where(Deal.category == category)
 
@@ -88,6 +140,7 @@ def register_routes(app: FastAPI) -> None:
             ).scalars().all()
 
             queue_summary = _queue_summary(session, [deal.id for deal in deals])
+            status_summary = _status_summary_map(queue_summary)
             categories = [r[0] for r in session.execute(select(Deal.category).distinct()).all()]
 
             return templates.TemplateResponse(
@@ -96,7 +149,9 @@ def register_routes(app: FastAPI) -> None:
                 {
                     "deals": deals,
                     "queue_summary": queue_summary,
+                    "status_summary": status_summary,
                     "categories": categories,
+                    "filter_status": status,
                     "filter_category": category,
                 },
             )

@@ -15,7 +15,10 @@ class ParsedDeal:
     original_price: Optional[float]
     currency: Optional[str]
     shipping: Optional[str]
+    shipping_tags: list[str]
+    coupon_codes: list[str]
     raw_text: str
+    user_notes: Optional[str]
 
 
 # Regex patterns
@@ -44,12 +47,71 @@ _FREE_SHIPPING = re.compile(
     re.IGNORECASE,
 )
 
+_FAST_SHIPPING = re.compile(
+    r"משלוח\s*מהיר|fast\s*shipping",
+    re.IGNORECASE,
+)
+
+_ISRAEL_WAREHOUSE = re.compile(
+    r"מחסן\s*ישראל(?:י)?|מהמחסן\s*הישראלי|warehouse\s*israel|from\s+israel\s+warehouse",
+    re.IGNORECASE,
+)
+
+_COUPON_KEYWORD = re.compile(r"קוד(?:\s+הנחה)?|coupon|code", re.IGNORECASE)
+_COUPON_TOKEN = re.compile(r"\b[A-Z0-9][A-Z0-9_-]{3,}\b")
+_URL_CLEANUP = re.compile(r"https?://\S+", re.IGNORECASE)
+
 _PRODUCT_ID_FROM_URL = re.compile(r"/item/(\d+)\.html", re.IGNORECASE)
+_COUPON_STOPWORDS = {
+    "HTTP",
+    "HTTPS",
+    "ALIEXPRESS",
+    "CLICK",
+    "CODE",
+    "COUPON",
+}
 
 
 def _parse_price_value(match: re.Match) -> float:
     raw = match.group(1) or match.group(2)
     return float(raw.replace(",", "."))
+
+
+def _extract_user_notes(text: str, link: str) -> Optional[str]:
+    notes = text.replace(link, " ")
+    notes = re.sub(r"\s+", " ", notes).strip(" \n\t-–|")
+    return notes or None
+
+
+def _extract_coupon_codes(text: str) -> list[str]:
+    coupons: list[str] = []
+    seen: set[str] = set()
+
+    for raw_line in text.splitlines():
+        line = _URL_CLEANUP.sub(" ", raw_line)
+        line = line.replace("*", " ").replace("`", " ")
+        if not _COUPON_KEYWORD.search(line):
+            continue
+
+        for token in _COUPON_TOKEN.findall(line.upper()):
+            if token in _COUPON_STOPWORDS:
+                continue
+            if token not in seen:
+                seen.add(token)
+                coupons.append(token)
+
+    return coupons
+
+
+def _extract_shipping_tags(text: str) -> list[str]:
+    tags: list[str] = []
+    if _FREE_SHIPPING.search(text):
+        tags.append("משלוח חינם")
+    if _FAST_SHIPPING.search(text):
+        tags.append("משלוח מהיר")
+    if _ISRAEL_WAREHOUSE.search(text):
+        tags.append("מחסן ישראל")
+    return tags
 
 
 class DealParser:
@@ -82,9 +144,8 @@ class DealParser:
         currency = prices.get("currency")
 
         # Extract shipping
-        shipping = None
-        if _FREE_SHIPPING.search(text):
-            shipping = "חינם"
+        shipping_tags = _extract_shipping_tags(text)
+        shipping = "חינם" if "משלוח חינם" in shipping_tags else None
 
         return ParsedDeal(
             link=link,
@@ -93,7 +154,10 @@ class DealParser:
             original_price=original_price,
             currency=currency,
             shipping=shipping,
+            shipping_tags=shipping_tags,
+            coupon_codes=_extract_coupon_codes(text),
             raw_text=text,
+            user_notes=_extract_user_notes(text, link),
         )
 
     def _extract_prices(self, text: str) -> dict:

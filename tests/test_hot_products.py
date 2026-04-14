@@ -12,7 +12,8 @@ from sqlalchemy import select
 from bot.category_resolver import CategoryResolution
 from bot.hot_products import HotProductFetcher, _download_image
 from bot.models import Deal, PublishQueueItem, RawMessage
-from bot.rewriter import RewriteResult
+from bot.quality import QualityDecision
+from bot.rewriter import ContentRewriter, RewriteResult
 
 
 def _make_logo_image() -> bytes:
@@ -39,17 +40,21 @@ def _make_product(
     category: str = "Consumer Electronics",
     orders: int = 500,
     discount: str = "50%",
+    app_sale_price: float | None = None,
+    promo_code_info=None,
 ) -> MagicMock:
     p = MagicMock()
     p.product_id = product_id
     p.product_title = title
     p.target_sale_price = sale_price
+    p.target_app_sale_price = app_sale_price if app_sale_price is not None else sale_price
     p.target_original_price = original_price
     p.promotion_link = promo_link
     p.product_main_image_url = image_url
     p.first_level_category_name = category
     p.lastest_volume = orders
     p.discount = discount
+    p.promo_code_info = promo_code_info
     return p
 
 
@@ -70,6 +75,8 @@ def mock_rewriter() -> MagicMock:
             product_name_clean="Bluetooth Earbuds",
         )
     )
+    helper = ContentRewriter(api_key="sk-test", model="gpt-4o-mini")
+    rw.finalize_text = helper.finalize_text
     return rw
 
 
@@ -103,6 +110,15 @@ def fetcher(mock_ali_api, mock_rewriter, mock_image_processor, db_session, tmp_p
     affiliate_pool = MagicMock()
     affiliate_pool.get_affiliate_link.return_value = ("https://aff.link", "secondary")
 
+    quality_gate = MagicMock()
+    quality_gate.evaluate_hot_product.return_value = QualityDecision(
+        accepted=True,
+        score=88,
+        priority=88,
+        reason="quality_pass",
+    )
+    quality_gate.idle_destination_hours = 6
+
     return HotProductFetcher(
         ali_api=mock_ali_api,
         rewriter=mock_rewriter,
@@ -112,6 +128,7 @@ def fetcher(mock_ali_api, mock_rewriter, mock_image_processor, db_session, tmp_p
         category_resolver=category_resolver,
         affiliate_pool=affiliate_pool,
         max_products_per_run=3,
+        quality_gate=quality_gate,
     )
 
 
@@ -160,6 +177,7 @@ class TestProcessProduct:
         queue_items = db_session.execute(select(PublishQueueItem)).scalars().all()
         assert len(queue_items) == 2
         assert {item.platform for item in queue_items} == {"telegram", "whatsapp"}
+        assert {item.priority for item in queue_items} == {88}
 
     async def test_falls_back_to_search_promo_link_when_pool_returns_none(
         self, fetcher: HotProductFetcher, db_session, tmp_path
@@ -176,6 +194,65 @@ class TestProcessProduct:
         assert deal.affiliate_link == "https://fallback.link"
         raw = db_session.execute(select(RawMessage)).scalar_one()
         assert raw.source_group == "hot_products"
+
+    async def test_skips_low_quality_product(self, fetcher: HotProductFetcher, db_session, tmp_path):
+        fetcher._quality_gate.evaluate_hot_product.return_value = QualityDecision(
+            accepted=False,
+            score=25,
+            priority=25,
+            reason="quality_below_threshold",
+        )
+        product = _make_product(product_id="LOW001")
+
+        with patch("bot.hot_products._download_image", return_value=_make_test_image()), patch(
+            "bot.hot_products._IMAGE_DIR", tmp_path
+        ):
+            deal = await fetcher._process_product(product)
+
+        assert deal is None
+        assert db_session.execute(select(Deal)).scalars().all() == []
+
+    async def test_idle_destination_override_allows_low_quality_product(
+        self, fetcher: HotProductFetcher, db_session, tmp_path
+    ):
+        fetcher._quality_gate.evaluate_hot_product.return_value = QualityDecision(
+            accepted=True,
+            score=25,
+            priority=175,
+            reason="idle_destination_override",
+        )
+        product = _make_product(product_id="IDLE001")
+
+        with patch("bot.hot_products._download_image", return_value=_make_test_image()), patch(
+            "bot.hot_products._IMAGE_DIR", tmp_path
+        ):
+            deal = await fetcher._process_product(product)
+
+        assert deal is not None
+        queue_items = db_session.execute(select(PublishQueueItem)).scalars().all()
+        assert {item.priority for item in queue_items} == {175}
+
+    async def test_hot_product_uses_app_price_and_api_coupon_codes(
+        self, fetcher: HotProductFetcher, db_session, tmp_path
+    ):
+        promo = MagicMock()
+        promo.promo_code = "SAVE7"
+        promo.code_value = "On order over USD 10, get USD 7 off"
+        product = _make_product(
+            product_id="PROMO001",
+            sale_price=38.6,
+            app_sale_price=30.94,
+            promo_code_info=promo,
+        )
+
+        with patch("bot.hot_products._download_image", return_value=_make_test_image()), patch(
+            "bot.hot_products._IMAGE_DIR", tmp_path
+        ):
+            deal = await fetcher._process_product(product)
+
+        assert deal is not None
+        assert deal.price == 30.94
+        assert "🎟️ קוד הנחה: SAVE7 - On order over USD 10, get USD 7 off" in deal.rewritten_text
 
 
 class TestDownloadImage:

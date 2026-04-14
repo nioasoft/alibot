@@ -35,6 +35,11 @@ publishing:
       platform: "telegram"
       target: "@hadilimshelisrael"
       categories: ["*"]
+    wa_general:
+      enabled: true
+      platform: "whatsapp"
+      target: "120363406689019707@g.us"
+      categories: ["*"]
     wa_main:
       enabled: true
       platform: "whatsapp"

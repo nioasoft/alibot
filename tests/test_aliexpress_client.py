@@ -51,38 +51,40 @@ def test_get_orders_parses_affiliate_orders():
     client._api = SimpleNamespace(
         get_order_list=lambda **kwargs: SimpleNamespace(
             total_page_no=2,
-            orders=[
-                SimpleNamespace(
-                    order_id="1001",
-                    sub_order_id="1001-1",
-                    order_status="Payment Completed",
-                    tracking_id="track",
-                    custom_parameters='{"token":"abc"}',
-                    product_id="2002",
-                    product_title="Order Product",
-                    product_detail_url="https://www.aliexpress.com/item/2002.html",
-                    product_main_image_url="https://img.example/2002.jpg",
-                    product_count="1",
-                    ship_to_country="IL",
-                    settled_currency="USD",
-                    paid_amount="12.3",
-                    finished_amount="10.5",
-                    estimated_paid_commission="1.1",
-                    estimated_finished_commission="0.9",
-                    commission_rate="7%",
-                    incentive_commission_rate="1%",
-                    new_buyer_bonus_commission="0.2",
-                    is_new_buyer="Y",
-                    order_type="global",
-                    order_platform="pc",
-                    effect_detail_status="valid",
-                    category_id="123",
-                    created_time="2026-04-18 12:00:00",
-                    paid_time="2026-04-18 12:05:00",
-                    finished_time="2026-04-20 12:05:00",
-                    completed_settlement_time="2026-04-25 12:05:00",
-                )
-            ],
+            orders=SimpleNamespace(
+                order=[
+                    SimpleNamespace(
+                        order_id="1001",
+                        sub_order_id="1001-1",
+                        order_status="Payment Completed",
+                        tracking_id="track",
+                        custom_parameters='{"token":"abc"}',
+                        product_id="2002",
+                        product_title="Order Product",
+                        product_detail_url="https://www.aliexpress.com/item/2002.html",
+                        product_main_image_url="https://img.example/2002.jpg",
+                        product_count="1",
+                        ship_to_country="IL",
+                        settled_currency="USD",
+                        paid_amount="12.3",
+                        finished_amount="10.5",
+                        estimated_paid_commission="1.1",
+                        estimated_finished_commission="0.9",
+                        commission_rate="7%",
+                        incentive_commission_rate="1%",
+                        new_buyer_bonus_commission="0.2",
+                        is_new_buyer="Y",
+                        order_type="global",
+                        order_platform="pc",
+                        effect_detail_status="valid",
+                        category_id="123",
+                        created_time="2026-04-18 12:00:00",
+                        paid_time="2026-04-18 12:05:00",
+                        finished_time="2026-04-20 12:05:00",
+                        completed_settlement_time="2026-04-25 12:05:00",
+                    )
+                ]
+            ),
         )
     )
 

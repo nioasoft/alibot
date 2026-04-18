@@ -366,7 +366,21 @@ class AliExpressClient:
             )
             return [], 0
 
-        orders = getattr(response, "orders", None) or []
+        raw_orders = getattr(response, "orders", None)
+        if raw_orders is None:
+            orders = []
+        elif isinstance(raw_orders, list):
+            orders = raw_orders
+        elif hasattr(raw_orders, "order"):
+            nested = getattr(raw_orders, "order", None)
+            if nested is None:
+                orders = []
+            elif isinstance(nested, list):
+                orders = nested
+            else:
+                orders = [nested]
+        else:
+            orders = [raw_orders]
         total_pages = int(getattr(response, "total_page_no", 0) or 0)
         return [self._parse_affiliate_order(order) for order in orders], total_pages
 

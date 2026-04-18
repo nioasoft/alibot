@@ -19,7 +19,7 @@ marketing:
   invite_links_path: "website/src/data/invite-links.json"
 
 tracking:
-  base_url: ""
+  base_url: "https://trk.dilim.net"
 
 openai:
   model: "gpt-4o-mini"

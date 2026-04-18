@@ -50,6 +50,7 @@ class MarketingConfig:
 @dataclass(frozen=True)
 class TrackingConfig:
     base_url: str
+    api_secret: str
 
 
 @dataclass(frozen=True)
@@ -324,6 +325,7 @@ def _load_tracking_config(raw: dict) -> TrackingConfig:
     tracking_raw = raw.get("tracking", {})
     return TrackingConfig(
         base_url=str(tracking_raw.get("base_url", "")).strip().rstrip("/"),
+        api_secret=_optional_env("TRACKING_API_SECRET").strip(),
     )
 
 

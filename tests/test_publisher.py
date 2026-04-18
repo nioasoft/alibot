@@ -1,10 +1,12 @@
 import datetime
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
+import respx
 
 from bot.config import DestinationConfig, InviteLinkConfig
-from bot.models import AffiliateLinkToken, Deal, PublishQueueItem, RawMessage
+from bot.models import Deal, PublishQueueItem, RawMessage
 from bot.publisher import DealPublisher
 
 
@@ -77,6 +79,7 @@ def publisher(db_session):
         web_publisher=web,
         site_url="https://www.dilim.net/",
         tracking_base_url="https://trk.dilim.net",
+        tracking_api_secret="tracker-secret",
         invite_links=[
             InviteLinkConfig(
                 url="https://t.me/test",
@@ -266,28 +269,48 @@ class TestPublishExecution:
     async def test_publish_marks_telegram_item_as_published(self, publisher: DealPublisher, db_session):
         deal, qi = _seed_deal(db_session, deal_id=1, platform="telegram")
 
-        await publisher.publish_one(qi, deal)
+        with respx.mock:
+            respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                return_value=httpx.Response(
+                    201,
+                    json={
+                        "token": "telegram-token",
+                        "trackedUrl": "https://trk.dilim.net/go/telegram-token",
+                        "reused": False,
+                    },
+                )
+            )
+            await publisher.publish_one(qi, deal)
 
         db_session.refresh(qi)
         assert qi.status == "published"
         assert qi.message_id == 99999
         assert qi.published_at is not None
         tracked_link = publisher._telegram.send_deal.await_args.kwargs["link"]
-        assert tracked_link.startswith("https://trk.dilim.net/go/")
-        token = db_session.query(AffiliateLinkToken).filter_by(queue_item_id=qi.id).one()
-        assert tracked_link.endswith(token.token)
+        assert tracked_link == "https://trk.dilim.net/go/telegram-token"
 
     async def test_publish_whatsapp_item_marks_published(self, publisher: DealPublisher, db_session):
         deal, qi = _seed_deal(db_session, deal_id=2, platform="whatsapp", target_ref="120@g.us")
 
-        await publisher.publish_one(qi, deal)
+        with respx.mock:
+            respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                return_value=httpx.Response(
+                    201,
+                    json={
+                        "token": "wa-token",
+                        "trackedUrl": "https://trk.dilim.net/go/wa-token",
+                        "reused": False,
+                    },
+                )
+            )
+            await publisher.publish_one(qi, deal)
 
         db_session.refresh(qi)
         assert qi.status == "published"
         assert qi.message_id is None
         publisher._whatsapp.send_deal.assert_awaited_once()
         sent_text = publisher._whatsapp.send_deal.await_args.kwargs["text"]
-        assert "https://trk.dilim.net/go/" in sent_text
+        assert "https://trk.dilim.net/go/wa-token" in sent_text
 
     async def test_publish_facebook_item_marks_published(self, publisher: DealPublisher, db_session):
         deal, qi = _seed_deal(
@@ -297,14 +320,25 @@ class TestPublishExecution:
             target_ref="https://www.facebook.com/groups/test",
         )
 
-        await publisher.publish_one(qi, deal)
+        with respx.mock:
+            respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                return_value=httpx.Response(
+                    201,
+                    json={
+                        "token": "fb-token",
+                        "trackedUrl": "https://trk.dilim.net/go/fb-token",
+                        "reused": False,
+                    },
+                )
+            )
+            await publisher.publish_one(qi, deal)
 
         db_session.refresh(qi)
         assert qi.status == "published"
         assert qi.message_id is None
         publisher._facebook.send_deal.assert_awaited_once()
-        assert publisher._facebook.send_deal.await_args.kwargs["purchase_url"].startswith(
-            "https://trk.dilim.net/go/"
+        assert publisher._facebook.send_deal.await_args.kwargs["purchase_url"] == (
+            "https://trk.dilim.net/go/fb-token"
         )
 
     async def test_check_queue_processes_one_item_per_lane(self, publisher: DealPublisher, db_session):
@@ -320,13 +354,36 @@ class TestPublishExecution:
         main_qi.priority = 80
         category_qi.priority = 75
         db_session.commit()
+        publisher.is_quiet_hour = MagicMock(return_value=False)
 
-        await publisher.check_queue()
+        with respx.mock:
+            route = respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                side_effect=[
+                    httpx.Response(
+                        201,
+                        json={
+                            "token": "main-token",
+                            "trackedUrl": "https://trk.dilim.net/go/main-token",
+                            "reused": False,
+                        },
+                    ),
+                    httpx.Response(
+                        201,
+                        json={
+                            "token": "category-token",
+                            "trackedUrl": "https://trk.dilim.net/go/category-token",
+                            "reused": False,
+                        },
+                    ),
+                ]
+            )
+            await publisher.check_queue()
 
         db_session.refresh(main_qi)
         db_session.refresh(category_qi)
         assert main_qi.status == "published"
         assert category_qi.status == "published"
+        assert route.call_count == 2
         publisher._telegram.send_deal.assert_awaited()
         publisher._whatsapp.send_deal.assert_awaited()
 
@@ -356,8 +413,20 @@ class TestPublishExecution:
         tg_main.destination_key = "tg_main"
         tg_main.priority = 80
         db_session.commit()
+        publisher.is_quiet_hour = MagicMock(return_value=False)
 
-        await publisher.check_queue()
+        with respx.mock:
+            respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                return_value=httpx.Response(
+                    201,
+                    json={
+                        "token": "tg-main-token",
+                        "trackedUrl": "https://trk.dilim.net/go/tg-main-token",
+                        "reused": False,
+                    },
+                )
+            )
+            await publisher.check_queue()
 
         db_session.refresh(slow_queued)
         db_session.refresh(tg_main)

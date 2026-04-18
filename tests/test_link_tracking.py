@@ -1,5 +1,9 @@
 import datetime
 
+import httpx
+import pytest
+import respx
+
 from bot.link_tracking import LinkTracker
 from bot.models import AffiliateLinkToken, Deal, PublishQueueItem, RawMessage
 
@@ -60,24 +64,46 @@ def _seed_deal_and_queue(db_session):
     return deal, queue_item
 
 
-def test_get_or_create_tracked_url_reuses_existing_token(db_session) -> None:
+@pytest.mark.asyncio
+async def test_get_or_create_tracked_url_uses_remote_tracking_api(db_session) -> None:
     deal, queue_item = _seed_deal_and_queue(db_session)
-    tracker = LinkTracker(db_session, base_url="https://trk.dilim.net")
+    tracker = LinkTracker(
+        db_session,
+        base_url="https://trk.dilim.net",
+        api_secret="tracker-secret",
+    )
 
-    first = tracker.get_or_create_tracked_url(deal, queue_item, deal.affiliate_link)
-    second = tracker.get_or_create_tracked_url(deal, queue_item, deal.affiliate_link)
+    with respx.mock:
+        route = respx.post("https://trk.dilim.net/api/tracking-links").mock(
+            return_value=httpx.Response(
+                201,
+                json={
+                    "token": "abc123",
+                    "trackedUrl": "https://trk.dilim.net/go/abc123",
+                    "reused": False,
+                },
+            )
+        )
+        result = await tracker.get_or_create_tracked_url(
+            deal,
+            queue_item,
+            deal.affiliate_link,
+        )
 
-    assert first == second
-    tokens = db_session.query(AffiliateLinkToken).all()
-    assert len(tokens) == 1
-    assert first.endswith(tokens[0].token)
+    assert result == "https://trk.dilim.net/go/abc123"
+    assert route.called
+    payload = route.calls[0].request.read().decode("utf-8")
+    assert "\"category\":\"tech\"" in payload
+    assert "\"queueItemId\":1" in payload
+    assert db_session.query(AffiliateLinkToken).count() == 0
 
 
-def test_get_or_create_tracked_url_returns_raw_url_when_disabled(db_session) -> None:
+@pytest.mark.asyncio
+async def test_get_or_create_tracked_url_returns_raw_url_when_disabled(db_session) -> None:
     deal, queue_item = _seed_deal_and_queue(db_session)
     tracker = LinkTracker(db_session, base_url="")
 
-    result = tracker.get_or_create_tracked_url(deal, queue_item, deal.affiliate_link)
+    result = await tracker.get_or_create_tracked_url(deal, queue_item, deal.affiliate_link)
 
     assert result == deal.affiliate_link
     assert db_session.query(AffiliateLinkToken).count() == 0

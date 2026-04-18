@@ -74,6 +74,7 @@ marketing:
     assert config.marketing.site_url == "https://www.dilim.net/"
     assert config.marketing.invite_links == []
     assert config.tracking.base_url == ""
+    assert config.tracking.api_secret == ""
     assert config.quality.min_score_external == 70
     assert config.quality.idle_destination_hours == 6
     assert config.quality.min_score_hot_products == 80
@@ -94,6 +95,7 @@ def test_config_loads_env_vars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ALIEXPRESS_SECONDARY_APP_KEY", "sk")
     monkeypatch.setenv("ALIEXPRESS_SECONDARY_APP_SECRET", "ss")
     monkeypatch.setenv("ALIEXPRESS_SECONDARY_TRACKING_ID", "st")
+    monkeypatch.setenv("TRACKING_API_SECRET", "tracker-secret")
 
     config_file = tmp_path / "config.yaml"
     invite_links_file = tmp_path / "invite-links.json"
@@ -175,6 +177,7 @@ quality:
     assert config.openai.api_key == "sk-test-key"
     assert config.marketing.site_url == "https://www.dilim.net/"
     assert config.tracking.base_url == "https://trk.dilim.net"
+    assert config.tracking.api_secret == "tracker-secret"
     assert len(config.marketing.invite_links) == 1
     assert config.marketing.invite_links[0].platform == "telegram"
     assert config.publishing.destinations["tg_main"].min_publish_interval_minutes == 120

@@ -195,6 +195,7 @@ async def main():
         web_publisher=web_publisher,
         site_url=config.marketing.site_url,
         tracking_base_url=config.tracking.base_url,
+        tracking_api_secret=config.tracking.api_secret,
         invite_links=config.marketing.invite_links,
         destinations=config.publishing.destinations,
         weekend_reduced_rate_factor=config.publishing.weekend_reduced_rate_factor,

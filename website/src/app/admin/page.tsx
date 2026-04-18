@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export default async function TrackingAdminPage() {
-  const { summary, topLinks, recentLinks, recentClicks } =
+  const { summary, categoryStats, topLinks, recentLinks, recentClicks } =
     await getTrackingDashboardData();
 
   return (
@@ -59,12 +59,48 @@ export default async function TrackingAdminPage() {
         </section>
 
         <section className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+          <Panel title="Categories" subtitle="אילו קטגוריות מושכות יותר קליקים">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-right text-sm">
+                <thead className="text-brand-navy/55">
+                  <tr className="border-b border-brand-navy/10">
+                    <th className="px-3 py-3 font-bold">קטגוריה</th>
+                    <th className="px-3 py-3 font-bold">לינקים</th>
+                    <th className="px-3 py-3 font-bold">קליקים</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categoryStats.length ? (
+                    categoryStats.slice(0, 10).map((row) => (
+                      <tr key={row.category} className="border-b border-brand-navy/8">
+                        <td className="px-3 py-3 align-top">
+                          <span className="rounded-full bg-brand-orange/10 px-3 py-1 font-bold text-brand-orange">
+                            {row.category}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {row.links}
+                        </td>
+                        <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                          {row.clicks}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <EmptyRow colSpan={3} label="עדיין אין קטגוריות שנמדדו." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
           <Panel title="Top Links" subtitle="הקישורים עם הכי הרבה קליקים">
             <div className="overflow-x-auto">
               <table className="min-w-full text-right text-sm">
                 <thead className="text-brand-navy/55">
                   <tr className="border-b border-brand-navy/10">
                     <th className="px-3 py-3 font-bold">יעד</th>
+                    <th className="px-3 py-3 font-bold">קטגוריה</th>
                     <th className="px-3 py-3 font-bold">מקור</th>
                     <th className="px-3 py-3 font-bold">קליקים</th>
                     <th className="px-3 py-3 font-bold">לינק</th>
@@ -82,6 +118,9 @@ export default async function TrackingAdminPage() {
                           <div className="mt-1 text-xs text-brand-navy/60">
                             {formatDateTime(link.lastClickedAt)}
                           </div>
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {renderCategory(link.category)}
                         </td>
                         <td className="px-3 py-3 align-top text-brand-navy/70">
                           {link.sourceGroup || "unknown"}
@@ -104,7 +143,7 @@ export default async function TrackingAdminPage() {
                       </tr>
                     ))
                   ) : (
-                    <EmptyRow colSpan={4} label="עדיין אין קישורים עם קליקים." />
+                    <EmptyRow colSpan={5} label="עדיין אין קישורים עם קליקים." />
                   )}
                 </tbody>
               </table>
@@ -134,6 +173,7 @@ export default async function TrackingAdminPage() {
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-brand-navy/70">
+                      <Badge>{click.category || "other"}</Badge>
                       <Badge>{click.countryCode || "??"}</Badge>
                       <Badge>{click.sourceGroup || "unknown source"}</Badge>
                       <Badge>{shortenReferer(click.referer)}</Badge>
@@ -155,6 +195,7 @@ export default async function TrackingAdminPage() {
                   <th className="px-3 py-3 font-bold">נוצר</th>
                   <th className="px-3 py-3 font-bold">יעד</th>
                   <th className="px-3 py-3 font-bold">מקור</th>
+                  <th className="px-3 py-3 font-bold">קטגוריה</th>
                   <th className="px-3 py-3 font-bold">קליקים</th>
                   <th className="px-3 py-3 font-bold">לינק מנוטר</th>
                   <th className="px-3 py-3 font-bold">יעד סופי</th>
@@ -178,6 +219,9 @@ export default async function TrackingAdminPage() {
                       </td>
                       <td className="px-3 py-3 align-top text-brand-navy/70">
                         {link.sourceGroup || "unknown"}
+                      </td>
+                      <td className="px-3 py-3 align-top text-brand-navy/70">
+                        {renderCategory(link.category)}
                       </td>
                       <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
                         {link.clickCount}
@@ -203,7 +247,7 @@ export default async function TrackingAdminPage() {
                     </tr>
                   ))
                 ) : (
-                  <EmptyRow colSpan={6} label="עדיין לא נוצרו לינקים." />
+                  <EmptyRow colSpan={7} label="עדיין לא נוצרו לינקים." />
                 )}
               </tbody>
             </table>
@@ -276,6 +320,10 @@ function buildTrackedUrl(token: string) {
   const baseUrl =
     process.env.TRACKING_BASE_URL?.replace(/\/+$/, "") ?? "https://trk.dilim.net";
   return `${baseUrl}/go/${token}`;
+}
+
+function renderCategory(category: string | null) {
+  return category || "other";
 }
 
 function formatDateTime(value: string | null) {

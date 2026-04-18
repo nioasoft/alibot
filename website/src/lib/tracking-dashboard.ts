@@ -13,9 +13,16 @@ export interface TrackingLinkRow {
   platform: string | null;
   destinationKey: string | null;
   sourceGroup: string | null;
+  category: string | null;
   clickCount: number;
   createdAt: string;
   lastClickedAt: string | null;
+}
+
+export interface TrackingCategoryRow {
+  category: string;
+  links: number;
+  clicks: number;
 }
 
 export interface TrackingClickRow {
@@ -26,6 +33,7 @@ export interface TrackingClickRow {
   platform: string | null;
   destinationKey: string | null;
   sourceGroup: string | null;
+  category: string | null;
 }
 
 export async function getTrackingDashboardData() {
@@ -38,6 +46,7 @@ export async function getTrackingDashboardData() {
     lastClickResult,
     topLinksResult,
     recentLinksResult,
+    categoryLinksResult,
     recentClicksResult,
   ] = await Promise.all([
     supabase
@@ -60,7 +69,7 @@ export async function getTrackingDashboardData() {
     supabase
       .from("tracking_links")
       .select(
-        "token, target_url, platform, destination_key, source_group, click_count, created_at, last_clicked_at"
+        "token, target_url, platform, destination_key, source_group, click_count, created_at, last_clicked_at, metadata"
       )
       .order("click_count", { ascending: false })
       .order("created_at", { ascending: false })
@@ -68,14 +77,19 @@ export async function getTrackingDashboardData() {
     supabase
       .from("tracking_links")
       .select(
-        "token, target_url, platform, destination_key, source_group, click_count, created_at, last_clicked_at"
+        "token, target_url, platform, destination_key, source_group, click_count, created_at, last_clicked_at, metadata"
       )
       .order("created_at", { ascending: false })
       .limit(25),
     supabase
+      .from("tracking_links")
+      .select("click_count, metadata")
+      .order("created_at", { ascending: false })
+      .limit(1000),
+    supabase
       .from("tracking_click_events")
       .select(
-        "token, clicked_at, country_code, referer, tracking_links(platform, destination_key, source_group)"
+        "token, clicked_at, country_code, referer, tracking_links(platform, destination_key, source_group, metadata)"
       )
       .order("clicked_at", { ascending: false })
       .limit(25),
@@ -87,7 +101,10 @@ export async function getTrackingDashboardData() {
   throwIfError(lastClickResult.error);
   throwIfError(topLinksResult.error);
   throwIfError(recentLinksResult.error);
+  throwIfError(categoryLinksResult.error);
   throwIfError(recentClicksResult.error);
+
+  const categoryStats = buildCategoryStats(categoryLinksResult.data ?? []);
 
   return {
     summary: {
@@ -96,6 +113,7 @@ export async function getTrackingDashboardData() {
       clickedLinks: clickedLinksResult.count ?? 0,
       lastClickAt: lastClickResult.data?.last_clicked_at ?? null,
     } satisfies TrackingSummary,
+    categoryStats,
     topLinks: (topLinksResult.data ?? []).map(mapLinkRow),
     recentLinks: (recentLinksResult.data ?? []).map(mapLinkRow),
     recentClicks: (recentClicksResult.data ?? []).map(mapClickRow),
@@ -109,6 +127,7 @@ function mapLinkRow(row: Record<string, unknown>): TrackingLinkRow {
     platform: toStringValue(row.platform),
     destinationKey: toStringValue(row.destination_key),
     sourceGroup: toStringValue(row.source_group),
+    category: extractCategory(row.metadata),
     clickCount: toNumberValue(row.click_count),
     createdAt: toStringValue(row.created_at) ?? "",
     lastClickedAt: toStringValue(row.last_clicked_at),
@@ -116,10 +135,7 @@ function mapLinkRow(row: Record<string, unknown>): TrackingLinkRow {
 }
 
 function mapClickRow(row: Record<string, unknown>): TrackingClickRow {
-  const link =
-    row.tracking_links && typeof row.tracking_links === "object"
-      ? (row.tracking_links as Record<string, unknown>)
-      : {};
+  const link = extractLinkedTrackingRow(row.tracking_links);
 
   return {
     token: toStringValue(row.token) ?? "",
@@ -129,7 +145,54 @@ function mapClickRow(row: Record<string, unknown>): TrackingClickRow {
     platform: toStringValue(link.platform),
     destinationKey: toStringValue(link.destination_key),
     sourceGroup: toStringValue(link.source_group),
+    category: extractCategory(link.metadata),
   };
+}
+
+function buildCategoryStats(rows: unknown[]): TrackingCategoryRow[] {
+  const byCategory = new Map<string, TrackingCategoryRow>();
+
+  for (const row of rows) {
+    const record =
+      row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const category = extractCategory(record.metadata) ?? "other";
+    const existing = byCategory.get(category) ?? {
+      category,
+      links: 0,
+      clicks: 0,
+    };
+    existing.links += 1;
+    existing.clicks += toNumberValue(record.click_count);
+    byCategory.set(category, existing);
+  }
+
+  return [...byCategory.values()].sort((left, right) => {
+    if (right.clicks !== left.clicks) {
+      return right.clicks - left.clicks;
+    }
+    return right.links - left.links;
+  });
+}
+
+function extractLinkedTrackingRow(value: unknown): Record<string, unknown> {
+  if (Array.isArray(value)) {
+    const [first] = value;
+    return first && typeof first === "object"
+      ? (first as Record<string, unknown>)
+      : {};
+  }
+
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function extractCategory(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return toStringValue((value as Record<string, unknown>).category);
 }
 
 function toStringValue(value: unknown): string | null {

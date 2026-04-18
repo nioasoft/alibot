@@ -39,6 +39,7 @@ class DealPublisher:
         web_publisher=None,
         site_url: str = "",
         tracking_base_url: str = "",
+        tracking_api_secret: str = "",
         invite_links: list[InviteLinkConfig] | None = None,
         destinations: dict[str, DestinationConfig] | None = None,
         weekend_reduced_rate_factor: float = 1.0,
@@ -61,7 +62,11 @@ class DealPublisher:
             site_url=site_url,
             invite_links=invite_links,
         )
-        self._link_tracker = LinkTracker(session=session, base_url=tracking_base_url)
+        self._link_tracker = LinkTracker(
+            session=session,
+            base_url=tracking_base_url,
+            api_secret=tracking_api_secret,
+        )
         self._destinations = destinations or {}
         self._weekend_reduced_rate_factor = weekend_reduced_rate_factor
         self._weekend_reduced_start_weekday = weekend_reduced_start_weekday
@@ -240,9 +245,9 @@ class DealPublisher:
         footer = self._footer_links.build_footer(purchase_url, deal.id)
         return f"{deal.rewritten_text}\n\n{footer}"
 
-    def _build_purchase_url(self, deal: Deal, queue_item: PublishQueueItem) -> str:
+    async def _build_purchase_url(self, deal: Deal, queue_item: PublishQueueItem) -> str:
         raw_url = deal.affiliate_link or deal.product_link
-        return self._link_tracker.get_or_create_tracked_url(
+        return await self._link_tracker.get_or_create_tracked_url(
             deal=deal,
             queue_item=queue_item,
             target_url=raw_url,
@@ -254,7 +259,7 @@ class DealPublisher:
 
         try:
             message_id = None
-            link = self._build_purchase_url(deal, queue_item)
+            link = await self._build_purchase_url(deal, queue_item)
 
             if queue_item.platform == "telegram":
                 if self._telegram is None:

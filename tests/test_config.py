@@ -75,6 +75,11 @@ marketing:
     assert config.marketing.invite_links == []
     assert config.tracking.base_url == ""
     assert config.tracking.api_secret == ""
+    assert config.affiliate_orders.enabled is True
+    assert config.affiliate_orders.interval_minutes == 120
+    assert config.affiliate_orders.lookback_days == 30
+    assert config.affiliate_orders.page_size == 50
+    assert config.affiliate_orders.locale_site == "global"
     assert config.quality.min_score_external == 70
     assert config.quality.idle_destination_hours == 6
     assert config.quality.min_score_hot_products == 80
@@ -119,6 +124,12 @@ marketing:
   invite_links_path: "invite-links.json"
 tracking:
   base_url: "https://trk.dilim.net"
+affiliate_orders:
+  enabled: true
+  interval_minutes: 180
+  lookback_days: 14
+  page_size: 25
+  locale_site: "ru_site"
 openai:
   model: "gpt-4o-mini"
 publishing:
@@ -178,6 +189,11 @@ quality:
     assert config.marketing.site_url == "https://www.dilim.net/"
     assert config.tracking.base_url == "https://trk.dilim.net"
     assert config.tracking.api_secret == "tracker-secret"
+    assert config.affiliate_orders.enabled is True
+    assert config.affiliate_orders.interval_minutes == 180
+    assert config.affiliate_orders.lookback_days == 14
+    assert config.affiliate_orders.page_size == 25
+    assert config.affiliate_orders.locale_site == "ru_site"
     assert len(config.marketing.invite_links) == 1
     assert config.marketing.invite_links[0].platform == "telegram"
     assert config.publishing.destinations["tg_main"].min_publish_interval_minutes == 120

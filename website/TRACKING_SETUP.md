@@ -32,6 +32,7 @@ If `TRACKING_IP_HASH_SALT` is omitted, the tracker will skip IP hashing and stor
 ## Supabase Setup
 
 Run [tracking.sql](/Users/asafbenatia/Projects/_personal/alibot/website/sql/tracking.sql:1) in the Supabase SQL editor.
+Run [affiliate_orders.sql](/Users/asafbenatia/Projects/_personal/alibot/website/sql/affiliate_orders.sql:1) to store AliExpress affiliate orders and commissions.
 
 ## Bot Request Shape
 

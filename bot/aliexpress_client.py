@@ -24,6 +24,34 @@ def _safe_float(value) -> Optional[float]:
         return None
 
 
+def _safe_int(value) -> Optional[int]:
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _as_optional_str(value) -> Optional[str]:
+    if value in (None, ""):
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _safe_bool_flag(value) -> Optional[bool]:
+    normalized = _as_optional_str(value)
+    if normalized is None:
+        return None
+    normalized = normalized.upper()
+    if normalized == "Y":
+        return True
+    if normalized == "N":
+        return False
+    return None
+
+
 @dataclass
 class ProductDetails:
     title: str
@@ -37,6 +65,39 @@ class ProductDetails:
     commission_rate: Optional[float]
     category: Optional[str]
     promo_codes: list["PromoCode"]
+
+
+@dataclass
+class AffiliateOrder:
+    order_id: str
+    sub_order_id: Optional[str]
+    order_status: Optional[str]
+    tracking_id: Optional[str]
+    custom_parameters: Optional[str]
+    product_id: Optional[str]
+    product_title: Optional[str]
+    product_detail_url: Optional[str]
+    product_main_image_url: Optional[str]
+    product_count: Optional[int]
+    ship_to_country: Optional[str]
+    settled_currency: Optional[str]
+    paid_amount: Optional[float]
+    finished_amount: Optional[float]
+    estimated_paid_commission: Optional[float]
+    estimated_finished_commission: Optional[float]
+    commission_rate: Optional[float]
+    incentive_commission_rate: Optional[float]
+    new_buyer_bonus_commission: Optional[float]
+    is_new_buyer: Optional[bool]
+    order_type: Optional[str]
+    order_platform: Optional[str]
+    effect_detail_status: Optional[str]
+    category_id: Optional[int]
+    created_time: Optional[str]
+    paid_time: Optional[str]
+    finished_time: Optional[str]
+    completed_settlement_time: Optional[str]
+    raw_payload: dict
 
 
 @dataclass(frozen=True)
@@ -243,6 +304,72 @@ class AliExpressClient:
             logger.error(f"Product search failed for '{keywords}' on account '{self.account_key}': {e}")
             return []
 
+    def get_orders(
+        self,
+        status: str,
+        start_time: str,
+        end_time: str,
+        page_no: int = 1,
+        page_size: int = 50,
+        locale_site: str = "global",
+    ) -> tuple[list[AffiliateOrder], int]:
+        if not self.is_enabled:
+            return [], 0
+
+        fields = [
+            "order_id",
+            "sub_order_id",
+            "order_status",
+            "tracking_id",
+            "custom_parameters",
+            "product_id",
+            "product_title",
+            "product_detail_url",
+            "product_main_image_url",
+            "product_count",
+            "ship_to_country",
+            "settled_currency",
+            "paid_amount",
+            "finished_amount",
+            "estimated_paid_commission",
+            "estimated_finished_commission",
+            "commission_rate",
+            "incentive_commission_rate",
+            "new_buyer_bonus_commission",
+            "is_new_buyer",
+            "order_type",
+            "order_platform",
+            "effect_detail_status",
+            "category_id",
+            "created_time",
+            "paid_time",
+            "finished_time",
+            "completed_settlement_time",
+        ]
+
+        try:
+            response = self._api.get_order_list(
+                status=status,
+                start_time=start_time,
+                end_time=end_time,
+                fields=fields,
+                locale_site=locale_site,
+                page_no=page_no,
+                page_size=page_size,
+            )
+        except Exception as e:
+            if "No orders found" in str(e):
+                return [], 0
+            logger.error(
+                f"Failed to fetch affiliate orders on account '{self.account_key}' "
+                f"status='{status}' page={page_no}: {e}"
+            )
+            return [], 0
+
+        orders = getattr(response, "orders", None) or []
+        total_pages = int(getattr(response, "total_page_no", 0) or 0)
+        return [self._parse_affiliate_order(order) for order in orders], total_pages
+
     def download_image(self, image_url: str) -> Optional[bytes]:
         """Download product image from AliExpress CDN.
 
@@ -266,3 +393,58 @@ class AliExpressClient:
         except Exception as e:
             logger.error(f"Failed to download image {image_url}: {e}")
             return None
+
+    def _parse_affiliate_order(self, order: object) -> AffiliateOrder:
+        raw_payload = {
+            key: getattr(order, key)
+            for key in dir(order)
+            if not key.startswith("_") and not callable(getattr(order, key))
+        }
+        return AffiliateOrder(
+            order_id=str(getattr(order, "order_id", "") or ""),
+            sub_order_id=_as_optional_str(getattr(order, "sub_order_id", None)),
+            order_status=_as_optional_str(getattr(order, "order_status", None)),
+            tracking_id=_as_optional_str(getattr(order, "tracking_id", None)),
+            custom_parameters=_as_optional_str(
+                getattr(order, "custom_parameters", None)
+                or getattr(order, "customer_parameters", None)
+            ),
+            product_id=_as_optional_str(getattr(order, "product_id", None)),
+            product_title=_as_optional_str(getattr(order, "product_title", None)),
+            product_detail_url=_as_optional_str(getattr(order, "product_detail_url", None)),
+            product_main_image_url=_as_optional_str(
+                getattr(order, "product_main_image_url", None)
+            ),
+            product_count=_safe_int(getattr(order, "product_count", None)),
+            ship_to_country=_as_optional_str(getattr(order, "ship_to_country", None)),
+            settled_currency=_as_optional_str(getattr(order, "settled_currency", None)),
+            paid_amount=_safe_float(getattr(order, "paid_amount", None)),
+            finished_amount=_safe_float(getattr(order, "finished_amount", None)),
+            estimated_paid_commission=_safe_float(
+                getattr(order, "estimated_paid_commission", None)
+            ),
+            estimated_finished_commission=_safe_float(
+                getattr(order, "estimated_finished_commission", None)
+            ),
+            commission_rate=_safe_float(getattr(order, "commission_rate", None)),
+            incentive_commission_rate=_safe_float(
+                getattr(order, "incentive_commission_rate", None)
+            ),
+            new_buyer_bonus_commission=_safe_float(
+                getattr(order, "new_buyer_bonus_commission", None)
+            ),
+            is_new_buyer=_safe_bool_flag(getattr(order, "is_new_buyer", None)),
+            order_type=_as_optional_str(getattr(order, "order_type", None)),
+            order_platform=_as_optional_str(getattr(order, "order_platform", None)),
+            effect_detail_status=_as_optional_str(
+                getattr(order, "effect_detail_status", None)
+            ),
+            category_id=_safe_int(getattr(order, "category_id", None)),
+            created_time=_as_optional_str(getattr(order, "created_time", None)),
+            paid_time=_as_optional_str(getattr(order, "paid_time", None)),
+            finished_time=_as_optional_str(getattr(order, "finished_time", None)),
+            completed_settlement_time=_as_optional_str(
+                getattr(order, "completed_settlement_time", None)
+            ),
+            raw_payload=raw_payload,
+        )

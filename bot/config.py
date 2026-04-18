@@ -54,6 +54,15 @@ class TrackingConfig:
 
 
 @dataclass(frozen=True)
+class AffiliateOrdersConfig:
+    enabled: bool
+    interval_minutes: int
+    lookback_days: int
+    page_size: int
+    locale_site: str
+
+
+@dataclass(frozen=True)
 class OpenAIConfig:
     api_key: str
     model: str
@@ -154,6 +163,7 @@ class AppConfig:
     telegram: TelegramConfig
     marketing: MarketingConfig
     tracking: TrackingConfig
+    affiliate_orders: AffiliateOrdersConfig
     openai: OpenAIConfig
     publishing: PublishingConfig
     dedup: DedupConfig
@@ -329,6 +339,17 @@ def _load_tracking_config(raw: dict) -> TrackingConfig:
     )
 
 
+def _load_affiliate_orders_config(raw: dict) -> AffiliateOrdersConfig:
+    orders_raw = raw.get("affiliate_orders", {})
+    return AffiliateOrdersConfig(
+        enabled=bool(orders_raw.get("enabled", True)),
+        interval_minutes=max(15, int(orders_raw.get("interval_minutes", 120))),
+        lookback_days=max(1, int(orders_raw.get("lookback_days", 30))),
+        page_size=max(1, min(50, int(orders_raw.get("page_size", 50)))),
+        locale_site=str(orders_raw.get("locale_site", "global")).strip() or "global",
+    )
+
+
 def load_config(config_path: str) -> AppConfig:
     config_file = Path(config_path).resolve()
     with open(config_file, encoding="utf-8") as f:
@@ -353,6 +374,7 @@ def load_config(config_path: str) -> AppConfig:
         ),
         marketing=_load_marketing_config(raw, config_file.parent),
         tracking=_load_tracking_config(raw),
+        affiliate_orders=_load_affiliate_orders_config(raw),
         openai=OpenAIConfig(
             api_key=_require_env("OPENAI_API_KEY"),
             model=raw["openai"]["model"],

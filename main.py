@@ -15,6 +15,7 @@ from telethon import TelegramClient
 
 from bot.admin import AdminCommands
 from bot.affiliate_pool import AffiliateLinkPool
+from bot.affiliate_order_sync import AffiliateOrderSync
 from bot.aliexpress_client import AliExpressClient
 from bot.aliexpress_pool import AliExpressClientPool
 from bot.category_resolver import CategoryResolver
@@ -58,7 +59,9 @@ async def _send_telegram_message(client: TelegramClient, admin_chat: str, text: 
     await client.send_message(admin_chat, text)
 
 
-def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClientPool, AffiliateLinkPool]:
+def _build_aliexpress_clients(
+    config: AppConfig,
+) -> tuple[AliExpressClientPool, AffiliateLinkPool, dict[str, AliExpressClient]]:
     catalog_clients: dict[str, AliExpressClient] = {}
     affiliate_clients: dict[str, AliExpressClient] = {}
     for key, account in config.aliexpress.accounts.items():
@@ -85,7 +88,7 @@ def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClientPool, 
         clients=affiliate_clients,
         distribution=config.aliexpress.affiliate_distribution,
     )
-    return catalog_client, affiliate_pool
+    return catalog_client, affiliate_pool, affiliate_clients
 
 
 async def main():
@@ -145,7 +148,7 @@ async def main():
         idle_priority_boost=config.quality.idle_priority_boost,
     )
 
-    catalog_client, affiliate_pool = _build_aliexpress_clients(config)
+    catalog_client, affiliate_pool, affiliate_clients = _build_aliexpress_clients(config)
 
     pipeline = Pipeline(
         parser=parser,
@@ -205,6 +208,17 @@ async def main():
         weekend_reduced_end_hour=config.publishing.weekend_reduced_end_hour,
     )
 
+    order_sync = None
+    if config.supabase and config.affiliate_orders.enabled:
+        order_sync = AffiliateOrderSync(
+            clients=affiliate_clients,
+            url=config.supabase.url,
+            key=config.supabase.service_key,
+            lookback_days=config.affiliate_orders.lookback_days,
+            page_size=config.affiliate_orders.page_size,
+            locale_site=config.affiliate_orders.locale_site,
+        )
+
     admin = AdminCommands(
         session=session,
         admin_user_id=config.telegram.admin_user_id,
@@ -249,8 +263,17 @@ async def main():
             CronTrigger(hour=4, minute=30),
             id="supabase_cleanup",
         )
+    if order_sync and order_sync.is_enabled:
+        scheduler.add_job(
+            order_sync.sync_recent_orders,
+            IntervalTrigger(minutes=config.affiliate_orders.interval_minutes),
+            id="affiliate_orders_sync",
+        )
     scheduler.start()
     logger.info("Scheduler started")
+
+    if order_sync and order_sync.is_enabled:
+        await order_sync.sync_recent_orders()
 
     await notifier.notify_startup()
 

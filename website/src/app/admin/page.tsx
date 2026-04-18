@@ -13,7 +13,16 @@ export const metadata: Metadata = {
 };
 
 export default async function TrackingAdminPage() {
-  const { summary, categoryStats, topLinks, recentLinks, recentClicks } =
+  const {
+    summary,
+    orderSummary,
+    categoryStats,
+    orderCategoryStats,
+    topLinks,
+    recentLinks,
+    recentClicks,
+    recentOrders,
+  } =
     await getTrackingDashboardData();
 
   return (
@@ -54,6 +63,38 @@ export default async function TrackingAdminPage() {
             <SummaryCard
               label="לינקים עם קליקים"
               value={summary.clickedLinks.toLocaleString("en-US")}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-white/70 bg-white/90 p-6 shadow-[0_30px_70px_rgba(30,42,74,0.12)] backdrop-blur">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-orange">
+                Affiliate Orders
+              </p>
+              <h2 className="mt-2 text-2xl font-extrabold text-brand-navy md:text-3xl">
+                הזמנות ועמלות מ־AliExpress
+              </h2>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-4">
+            <SummaryCard
+              label="סה״כ הזמנות"
+              value={orderSummary.totalOrders.toLocaleString("en-US")}
+            />
+            <SummaryCard
+              label="Payment Completed"
+              value={orderSummary.paymentCompletedOrders.toLocaleString("en-US")}
+            />
+            <SummaryCard
+              label="Buyer Confirmed"
+              value={orderSummary.buyerConfirmedOrders.toLocaleString("en-US")}
+            />
+            <SummaryCard
+              label="עמלה משוערת"
+              value={`$${orderSummary.estimatedFinishedCommission.toFixed(2)}`}
             />
           </div>
         </section>
@@ -150,6 +191,44 @@ export default async function TrackingAdminPage() {
             </div>
           </Panel>
 
+          <Panel
+            title="Order Categories"
+            subtitle="קטגוריות עם יותר הזמנות ועמלה משוערת"
+          >
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-right text-sm">
+                <thead className="text-brand-navy/55">
+                  <tr className="border-b border-brand-navy/10">
+                    <th className="px-3 py-3 font-bold">קטגוריה</th>
+                    <th className="px-3 py-3 font-bold">הזמנות</th>
+                    <th className="px-3 py-3 font-bold">עמלה משוערת</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {orderCategoryStats.length ? (
+                    orderCategoryStats.slice(0, 10).map((row) => (
+                      <tr key={`orders-${row.category}`} className="border-b border-brand-navy/8">
+                        <td className="px-3 py-3 align-top">
+                          <span className="rounded-full bg-brand-orange/10 px-3 py-1 font-bold text-brand-orange">
+                            {row.category}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {row.orders}
+                        </td>
+                        <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                          ${row.estimatedFinishedCommission.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <EmptyRow colSpan={3} label="עדיין לא סונכרנו הזמנות." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
           <Panel title="Recent Clicks" subtitle="ההקלקות האחרונות שנרשמו">
             <div className="space-y-3">
               {recentClicks.length ? (
@@ -186,6 +265,65 @@ export default async function TrackingAdminPage() {
             </div>
           </Panel>
         </section>
+
+        <Panel title="Recent Orders" subtitle="ההזמנות האחרונות שסונכרנו מ־AliExpress">
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-right text-sm">
+              <thead className="text-brand-navy/55">
+                <tr className="border-b border-brand-navy/10">
+                  <th className="px-3 py-3 font-bold">נוצר</th>
+                  <th className="px-3 py-3 font-bold">סטטוס</th>
+                  <th className="px-3 py-3 font-bold">קטגוריה</th>
+                  <th className="px-3 py-3 font-bold">מוצר</th>
+                  <th className="px-3 py-3 font-bold">חשבון</th>
+                  <th className="px-3 py-3 font-bold">Tracking ID</th>
+                  <th className="px-3 py-3 font-bold">עמלה</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentOrders.length ? (
+                  recentOrders.map((order) => (
+                    <tr key={`${order.accountKey}-${order.orderId}`} className="border-b border-brand-navy/8">
+                      <td className="px-3 py-3 align-top text-brand-navy/70">
+                        {formatDateTime(order.createdTime)}
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <div className="font-bold text-brand-navy">
+                          {order.orderStatus || "unknown"}
+                        </div>
+                        <div className="mt-1 text-xs text-brand-navy/60">
+                          סיום: {formatDateTime(order.finishedTime)}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 align-top text-brand-navy/70">
+                        {renderCategory(order.resolvedCategory)}
+                      </td>
+                      <td className="px-3 py-3 align-top">
+                        <div className="max-w-[18rem] truncate font-bold text-brand-navy">
+                          {order.productTitle || order.productId || "unknown"}
+                        </div>
+                        <div className="mt-1 text-xs text-brand-navy/60">
+                          {order.productId || "no product id"}
+                        </div>
+                      </td>
+                      <td className="px-3 py-3 align-top text-brand-navy/70">
+                        {order.accountKey}
+                      </td>
+                      <td className="px-3 py-3 align-top font-mono text-xs text-brand-navy/70">
+                        {order.trackingId || "unknown"}
+                      </td>
+                      <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                        ${order.estimatedFinishedCommission.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <EmptyRow colSpan={7} label="עדיין לא סונכרנו הזמנות." />
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
 
         <Panel title="Recent Links" subtitle="הלינקים האחרונים שנוצרו">
           <div className="overflow-x-auto">

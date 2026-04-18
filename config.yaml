@@ -21,6 +21,13 @@ marketing:
 tracking:
   base_url: "https://trk.dilim.net"
 
+affiliate_orders:
+  enabled: true
+  interval_minutes: 120
+  lookback_days: 30
+  page_size: 50
+  locale_site: "global"
+
 openai:
   model: "gpt-4o-mini"
 

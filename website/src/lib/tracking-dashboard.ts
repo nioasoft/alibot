@@ -7,6 +7,14 @@ export interface TrackingSummary {
   lastClickAt: string | null;
 }
 
+export interface OrderSummary {
+  totalOrders: number;
+  paymentCompletedOrders: number;
+  buyerConfirmedOrders: number;
+  estimatedPaidCommission: number;
+  estimatedFinishedCommission: number;
+}
+
 export interface TrackingLinkRow {
   token: string;
   targetUrl: string;
@@ -25,6 +33,12 @@ export interface TrackingCategoryRow {
   clicks: number;
 }
 
+export interface OrderCategoryRow {
+  category: string;
+  orders: number;
+  estimatedFinishedCommission: number;
+}
+
 export interface TrackingClickRow {
   token: string;
   clickedAt: string;
@@ -34,6 +48,20 @@ export interface TrackingClickRow {
   destinationKey: string | null;
   sourceGroup: string | null;
   category: string | null;
+}
+
+export interface AffiliateOrderRow {
+  accountKey: string;
+  orderId: string;
+  orderStatus: string | null;
+  productId: string | null;
+  productTitle: string | null;
+  resolvedCategory: string | null;
+  trackingId: string | null;
+  estimatedPaidCommission: number;
+  estimatedFinishedCommission: number;
+  createdTime: string | null;
+  finishedTime: string | null;
 }
 
 export async function getTrackingDashboardData() {
@@ -48,6 +76,11 @@ export async function getTrackingDashboardData() {
     recentLinksResult,
     categoryLinksResult,
     recentClicksResult,
+    orderCountResult,
+    paymentCompletedCountResult,
+    buyerConfirmedCountResult,
+    orderStatsRowsResult,
+    recentOrdersResult,
   ] = await Promise.all([
     supabase
       .from("tracking_links")
@@ -93,6 +126,31 @@ export async function getTrackingDashboardData() {
       )
       .order("clicked_at", { ascending: false })
       .limit(25),
+    supabase
+      .from("affiliate_orders")
+      .select("id", { count: "exact", head: true }),
+    supabase
+      .from("affiliate_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("order_status", "Payment Completed"),
+    supabase
+      .from("affiliate_orders")
+      .select("id", { count: "exact", head: true })
+      .eq("order_status", "Buyer Confirmed Receipt"),
+    supabase
+      .from("affiliate_orders")
+      .select(
+        "resolved_category, estimated_paid_commission, estimated_finished_commission"
+      )
+      .order("created_time", { ascending: false })
+      .limit(5000),
+    supabase
+      .from("affiliate_orders")
+      .select(
+        "account_key, order_id, order_status, product_id, product_title, resolved_category, tracking_id, estimated_paid_commission, estimated_finished_commission, created_time, finished_time"
+      )
+      .order("created_time", { ascending: false })
+      .limit(25),
   ]);
 
   throwIfError(totalLinksResult.error);
@@ -103,8 +161,15 @@ export async function getTrackingDashboardData() {
   throwIfError(recentLinksResult.error);
   throwIfError(categoryLinksResult.error);
   throwIfError(recentClicksResult.error);
+  throwIfError(orderCountResult.error);
+  throwIfError(paymentCompletedCountResult.error);
+  throwIfError(buyerConfirmedCountResult.error);
+  throwIfError(orderStatsRowsResult.error);
+  throwIfError(recentOrdersResult.error);
 
   const categoryStats = buildCategoryStats(categoryLinksResult.data ?? []);
+  const orderStats = buildOrderStats(orderStatsRowsResult.data ?? []);
+  const orderCategoryStats = buildOrderCategoryStats(orderStatsRowsResult.data ?? []);
 
   return {
     summary: {
@@ -113,10 +178,19 @@ export async function getTrackingDashboardData() {
       clickedLinks: clickedLinksResult.count ?? 0,
       lastClickAt: lastClickResult.data?.last_clicked_at ?? null,
     } satisfies TrackingSummary,
+    orderSummary: {
+      totalOrders: orderCountResult.count ?? 0,
+      paymentCompletedOrders: paymentCompletedCountResult.count ?? 0,
+      buyerConfirmedOrders: buyerConfirmedCountResult.count ?? 0,
+      estimatedPaidCommission: orderStats.estimatedPaidCommission,
+      estimatedFinishedCommission: orderStats.estimatedFinishedCommission,
+    } satisfies OrderSummary,
     categoryStats,
+    orderCategoryStats,
     topLinks: (topLinksResult.data ?? []).map(mapLinkRow),
     recentLinks: (recentLinksResult.data ?? []).map(mapLinkRow),
     recentClicks: (recentClicksResult.data ?? []).map(mapClickRow),
+    recentOrders: (recentOrdersResult.data ?? []).map(mapOrderRow),
   };
 }
 
@@ -149,6 +223,22 @@ function mapClickRow(row: Record<string, unknown>): TrackingClickRow {
   };
 }
 
+function mapOrderRow(row: Record<string, unknown>): AffiliateOrderRow {
+  return {
+    accountKey: toStringValue(row.account_key) ?? "",
+    orderId: toStringValue(row.order_id) ?? "",
+    orderStatus: toStringValue(row.order_status),
+    productId: toStringValue(row.product_id),
+    productTitle: toStringValue(row.product_title),
+    resolvedCategory: toStringValue(row.resolved_category),
+    trackingId: toStringValue(row.tracking_id),
+    estimatedPaidCommission: toNumberValue(row.estimated_paid_commission),
+    estimatedFinishedCommission: toNumberValue(row.estimated_finished_commission),
+    createdTime: toStringValue(row.created_time),
+    finishedTime: toStringValue(row.finished_time),
+  };
+}
+
 function buildCategoryStats(rows: unknown[]): TrackingCategoryRow[] {
   const byCategory = new Map<string, TrackingCategoryRow>();
 
@@ -171,6 +261,50 @@ function buildCategoryStats(rows: unknown[]): TrackingCategoryRow[] {
       return right.clicks - left.clicks;
     }
     return right.links - left.links;
+  });
+}
+
+function buildOrderStats(rows: unknown[]) {
+  let estimatedPaidCommission = 0;
+  let estimatedFinishedCommission = 0;
+
+  for (const row of rows) {
+    const record =
+      row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    estimatedPaidCommission += toNumberValue(record.estimated_paid_commission);
+    estimatedFinishedCommission += toNumberValue(record.estimated_finished_commission);
+  }
+
+  return {
+    estimatedPaidCommission,
+    estimatedFinishedCommission,
+  };
+}
+
+function buildOrderCategoryStats(rows: unknown[]): OrderCategoryRow[] {
+  const byCategory = new Map<string, OrderCategoryRow>();
+
+  for (const row of rows) {
+    const record =
+      row && typeof row === "object" ? (row as Record<string, unknown>) : {};
+    const category = toStringValue(record.resolved_category) ?? "other";
+    const existing = byCategory.get(category) ?? {
+      category,
+      orders: 0,
+      estimatedFinishedCommission: 0,
+    };
+    existing.orders += 1;
+    existing.estimatedFinishedCommission += toNumberValue(
+      record.estimated_finished_commission
+    );
+    byCategory.set(category, existing);
+  }
+
+  return [...byCategory.values()].sort((left, right) => {
+    if (right.estimatedFinishedCommission !== left.estimatedFinishedCommission) {
+      return right.estimatedFinishedCommission - left.estimatedFinishedCommission;
+    }
+    return right.orders - left.orders;
   });
 }
 

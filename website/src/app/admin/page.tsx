@@ -18,6 +18,9 @@ export default async function TrackingAdminPage() {
     orderSummary,
     categoryStats,
     orderCategoryStats,
+    topSources,
+    weakestSources,
+    recommendations,
     topLinks,
     recentLinks,
     recentClicks,
@@ -121,6 +124,81 @@ export default async function TrackingAdminPage() {
         </section>
 
         <section className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+          <Panel
+            title="Recommendations"
+            subtitle="המלצות אוטומטיות לפי קליקים, קטגוריות והזמנות משויכות"
+          >
+            <div className="space-y-3">
+              {recommendations.length ? (
+                recommendations.map((item) => (
+                  <article
+                    key={`${item.kind}-${item.title}`}
+                    className="rounded-3xl border border-brand-navy/10 bg-brand-navy/[0.03] px-4 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-bold text-brand-navy">{item.title}</div>
+                        <div className="mt-2 text-sm leading-6 text-brand-navy/70">
+                          {item.detail}
+                        </div>
+                      </div>
+                      <div className="rounded-full bg-brand-orange/10 px-3 py-1 text-xs font-bold text-brand-orange">
+                        score {item.score}
+                      </div>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <EmptyState label="עדיין אין מספיק מידע כדי להציע שינויים." />
+              )}
+            </div>
+          </Panel>
+
+          <Panel title="Top Sources" subtitle="מקורות שמביאים כרגע הכי הרבה עניין">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-right text-sm">
+                <thead className="text-brand-navy/55">
+                  <tr className="border-b border-brand-navy/10">
+                    <th className="px-3 py-3 font-bold">מקור</th>
+                    <th className="px-3 py-3 font-bold">קטגוריה מובילה</th>
+                    <th className="px-3 py-3 font-bold">לינקים</th>
+                    <th className="px-3 py-3 font-bold">קליקים</th>
+                    <th className="px-3 py-3 font-bold">כיסוי</th>
+                    <th className="px-3 py-3 font-bold">ניקוד</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topSources.length ? (
+                    topSources.map((source) => (
+                      <tr key={`top-source-${source.sourceGroup}`} className="border-b border-brand-navy/8">
+                        <td className="px-3 py-3 align-top font-bold text-brand-navy">
+                          {source.sourceGroup}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {renderCategory(source.primaryCategory)}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {source.links}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {source.clicks}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {Math.round(source.clickCoverageRate * 100)}%
+                        </td>
+                        <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                          {source.score}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <EmptyRow colSpan={6} label="עדיין אין מספיק נתוני מקורות." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
           <Panel title="Categories" subtitle="אילו קטגוריות מושכות יותר קליקים">
             <div className="overflow-x-auto">
               <table className="min-w-full text-right text-sm">
@@ -214,15 +292,18 @@ export default async function TrackingAdminPage() {
 
           <Panel
             title="Order Categories"
-            subtitle="קטגוריות עם יותר הזמנות ועמלה משוערת"
+            subtitle="קטגוריות משויכות עם יותר הזמנות, קליקים ועמלה"
           >
             <div className="overflow-x-auto">
               <table className="min-w-full text-right text-sm">
                 <thead className="text-brand-navy/55">
                   <tr className="border-b border-brand-navy/10">
                     <th className="px-3 py-3 font-bold">קטגוריה</th>
+                    <th className="px-3 py-3 font-bold">לינקים</th>
+                    <th className="px-3 py-3 font-bold">קליקים</th>
                     <th className="px-3 py-3 font-bold">הזמנות</th>
                     <th className="px-3 py-3 font-bold">עמלה משוערת</th>
+                    <th className="px-3 py-3 font-bold">ניקוד</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -235,15 +316,65 @@ export default async function TrackingAdminPage() {
                           </span>
                         </td>
                         <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {row.links}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {row.clicks}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
                           {row.orders}
                         </td>
                         <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
                           ${row.estimatedFinishedCommission.toFixed(2)}
                         </td>
+                        <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                          {row.score}
+                        </td>
                       </tr>
                     ))
                   ) : (
-                    <EmptyRow colSpan={3} label="עדיין לא סונכרנו הזמנות." />
+                    <EmptyRow colSpan={6} label="עדיין לא סונכרנו הזמנות משויכות." />
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <Panel title="Weak Sources" subtitle="מקורות שכרגע נראים חלשים או רועשים">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-right text-sm">
+                <thead className="text-brand-navy/55">
+                  <tr className="border-b border-brand-navy/10">
+                    <th className="px-3 py-3 font-bold">מקור</th>
+                    <th className="px-3 py-3 font-bold">לינקים</th>
+                    <th className="px-3 py-3 font-bold">קליקים</th>
+                    <th className="px-3 py-3 font-bold">ממוצע ללינק</th>
+                    <th className="px-3 py-3 font-bold">ניקוד</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {weakestSources.length ? (
+                    weakestSources.map((source) => (
+                      <tr key={`weak-source-${source.sourceGroup}`} className="border-b border-brand-navy/8">
+                        <td className="px-3 py-3 align-top font-bold text-brand-navy">
+                          {source.sourceGroup}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {source.links}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {source.clicks}
+                        </td>
+                        <td className="px-3 py-3 align-top text-brand-navy/70">
+                          {source.avgClicksPerLink.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-3 align-top font-extrabold text-brand-orange">
+                          {source.score}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <EmptyRow colSpan={5} label="עדיין אין מספיק מקורות להערכה." />
                   )}
                 </tbody>
               </table>

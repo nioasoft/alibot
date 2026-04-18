@@ -9,10 +9,13 @@ export interface TrackingSummary {
 
 export interface OrderSummary {
   totalOrders: number;
+  attributedOrders: number;
+  unattributedOrders: number;
   paymentCompletedOrders: number;
   buyerConfirmedOrders: number;
   estimatedPaidCommission: number;
   estimatedFinishedCommission: number;
+  attributedFinishedCommission: number;
 }
 
 export interface TrackingLinkRow {
@@ -62,6 +65,7 @@ export interface AffiliateOrderRow {
   estimatedFinishedCommission: number;
   createdTime: string | null;
   finishedTime: string | null;
+  isAttributed: boolean;
 }
 
 export async function getTrackingDashboardData() {
@@ -77,6 +81,8 @@ export async function getTrackingDashboardData() {
     categoryLinksResult,
     recentClicksResult,
     orderCountResult,
+    attributedOrderCountResult,
+    unattributedOrderCountResult,
     paymentCompletedCountResult,
     buyerConfirmedCountResult,
     orderStatsRowsResult,
@@ -132,6 +138,14 @@ export async function getTrackingDashboardData() {
     supabase
       .from("affiliate_orders")
       .select("id", { count: "exact", head: true })
+      .not("resolved_category", "is", null),
+    supabase
+      .from("affiliate_orders")
+      .select("id", { count: "exact", head: true })
+      .is("resolved_category", null),
+    supabase
+      .from("affiliate_orders")
+      .select("id", { count: "exact", head: true })
       .eq("order_status", "Payment Completed"),
     supabase
       .from("affiliate_orders")
@@ -162,6 +176,8 @@ export async function getTrackingDashboardData() {
   throwIfError(categoryLinksResult.error);
   throwIfError(recentClicksResult.error);
   throwIfError(orderCountResult.error);
+  throwIfError(attributedOrderCountResult.error);
+  throwIfError(unattributedOrderCountResult.error);
   throwIfError(paymentCompletedCountResult.error);
   throwIfError(buyerConfirmedCountResult.error);
   throwIfError(orderStatsRowsResult.error);
@@ -180,10 +196,13 @@ export async function getTrackingDashboardData() {
     } satisfies TrackingSummary,
     orderSummary: {
       totalOrders: orderCountResult.count ?? 0,
+      attributedOrders: attributedOrderCountResult.count ?? 0,
+      unattributedOrders: unattributedOrderCountResult.count ?? 0,
       paymentCompletedOrders: paymentCompletedCountResult.count ?? 0,
       buyerConfirmedOrders: buyerConfirmedCountResult.count ?? 0,
       estimatedPaidCommission: orderStats.estimatedPaidCommission,
       estimatedFinishedCommission: orderStats.estimatedFinishedCommission,
+      attributedFinishedCommission: orderStats.attributedFinishedCommission,
     } satisfies OrderSummary,
     categoryStats,
     orderCategoryStats,
@@ -236,6 +255,7 @@ function mapOrderRow(row: Record<string, unknown>): AffiliateOrderRow {
     estimatedFinishedCommission: toNumberValue(row.estimated_finished_commission),
     createdTime: toStringValue(row.created_time),
     finishedTime: toStringValue(row.finished_time),
+    isAttributed: Boolean(toStringValue(row.resolved_category)),
   };
 }
 
@@ -267,17 +287,22 @@ function buildCategoryStats(rows: unknown[]): TrackingCategoryRow[] {
 function buildOrderStats(rows: unknown[]) {
   let estimatedPaidCommission = 0;
   let estimatedFinishedCommission = 0;
+  let attributedFinishedCommission = 0;
 
   for (const row of rows) {
     const record =
       row && typeof row === "object" ? (row as Record<string, unknown>) : {};
     estimatedPaidCommission += toNumberValue(record.estimated_paid_commission);
     estimatedFinishedCommission += toNumberValue(record.estimated_finished_commission);
+    if (toStringValue(record.resolved_category)) {
+      attributedFinishedCommission += toNumberValue(record.estimated_finished_commission);
+    }
   }
 
   return {
     estimatedPaidCommission,
     estimatedFinishedCommission,
+    attributedFinishedCommission,
   };
 }
 
@@ -287,7 +312,10 @@ function buildOrderCategoryStats(rows: unknown[]): OrderCategoryRow[] {
   for (const row of rows) {
     const record =
       row && typeof row === "object" ? (row as Record<string, unknown>) : {};
-    const category = toStringValue(record.resolved_category) ?? "other";
+    const category = toStringValue(record.resolved_category);
+    if (!category) {
+      continue;
+    }
     const existing = byCategory.get(category) ?? {
       category,
       orders: 0,

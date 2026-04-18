@@ -85,6 +85,21 @@ export default async function TrackingAdminPage() {
               value={orderSummary.totalOrders.toLocaleString("en-US")}
             />
             <SummaryCard
+              label="עם שיוך קטגוריה"
+              value={orderSummary.attributedOrders.toLocaleString("en-US")}
+            />
+            <SummaryCard
+              label="Legacy / לא משויך"
+              value={orderSummary.unattributedOrders.toLocaleString("en-US")}
+            />
+            <SummaryCard
+              label="עמלה משויכת"
+              value={`$${orderSummary.attributedFinishedCommission.toFixed(2)}`}
+            />
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <SummaryCard
               label="Payment Completed"
               value={orderSummary.paymentCompletedOrders.toLocaleString("en-US")}
             />
@@ -97,6 +112,12 @@ export default async function TrackingAdminPage() {
               value={`$${orderSummary.estimatedFinishedCommission.toFixed(2)}`}
             />
           </div>
+
+          <p className="mt-4 text-sm leading-7 text-brand-navy/65">
+            קטגוריות ההזמנות מחושבות רק עבור הזמנות עם שיוך ברור. הזמנות היסטוריות
+            ישנות של החשבון, שלא ניתנות לשיוך אמין למערכת שלנו, מסומנות כ־legacy
+            או לא משויכות.
+          </p>
         </section>
 
         <section className="grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
@@ -288,15 +309,26 @@ export default async function TrackingAdminPage() {
                         {formatDateTime(order.createdTime)}
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <div className="font-bold text-brand-navy">
-                          {order.orderStatus || "unknown"}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-brand-navy">
+                            {order.orderStatus || "unknown"}
+                          </span>
+                          <span
+                            className={
+                              order.isAttributed
+                                ? "rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-700"
+                                : "rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600"
+                            }
+                          >
+                            {order.isAttributed ? "attributed" : "legacy"}
+                          </span>
                         </div>
                         <div className="mt-1 text-xs text-brand-navy/60">
                           סיום: {formatDateTime(order.finishedTime)}
                         </div>
                       </td>
                       <td className="px-3 py-3 align-top text-brand-navy/70">
-                        {renderCategory(order.resolvedCategory)}
+                        {order.resolvedCategory || "לא משויך"}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <div className="max-w-[18rem] truncate font-bold text-brand-navy">

@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import datetime
+import json
 from typing import Iterable
 
 from loguru import logger
 from supabase import create_client
 
 from bot.aliexpress_client import AffiliateOrder, AliExpressClient
+from bot.category_mapper import map_aliexpress_category
 
 ORDER_STATUSES = ("Payment Completed", "Buyer Confirmed Receipt")
+MAX_ALIEXPRESS_CATEGORY_LOOKUPS = 100
 
 
 class AffiliateOrderSync:
@@ -19,12 +22,14 @@ class AffiliateOrderSync:
         clients: dict[str, AliExpressClient],
         url: str,
         key: str,
+        product_details_client: object | None = None,
         lookback_days: int = 30,
         page_size: int = 50,
         locale_site: str = "global",
     ) -> None:
         self._clients = clients
         self._client = create_client(url, key)
+        self._product_details_client = product_details_client
         self._lookback_days = lookback_days
         self._page_size = page_size
         self._locale_site = locale_site
@@ -126,9 +131,21 @@ class AffiliateOrderSync:
         if not ids:
             return {}
 
+        category_map = self._fetch_deal_category_map(ids)
+        missing_ids = [product_id for product_id in ids if product_id not in category_map]
+        if missing_ids:
+            category_map.update(self._fetch_tracking_link_category_map(missing_ids))
+
+        still_missing = [product_id for product_id in ids if product_id not in category_map]
+        if still_missing:
+            category_map.update(self._fetch_aliexpress_category_map(still_missing))
+
+        return category_map
+
+    def _fetch_deal_category_map(self, product_ids: Iterable[str]) -> dict[str, str]:
         category_map: dict[str, str] = {}
         try:
-            for chunk in _chunked(ids, 200):
+            for chunk in _chunked(list(product_ids), 200):
                 result = (
                     self._client.table("deals")
                     .select("product_id, category")
@@ -142,6 +159,47 @@ class AffiliateOrderSync:
                         category_map[product_id] = category
         except Exception as exc:
             logger.warning(f"Failed to resolve order categories from deals table: {exc}")
+        return category_map
+
+    def _fetch_tracking_link_category_map(self, product_ids: Iterable[str]) -> dict[str, str]:
+        wanted_ids = {product_id for product_id in product_ids if product_id}
+        if not wanted_ids:
+            return {}
+
+        category_map: dict[str, str] = {}
+        try:
+            result = (
+                self._client.table("tracking_links")
+                .select("metadata")
+                .order("created_at", desc=True)
+                .limit(5000)
+                .execute()
+            )
+            for row in result.data or []:
+                metadata = _coerce_metadata(row.get("metadata"))
+                product_id = str(metadata.get("product_id", "")).strip()
+                category = str(metadata.get("category", "")).strip()
+                if product_id in wanted_ids and category and product_id not in category_map:
+                    category_map[product_id] = category
+        except Exception as exc:
+            logger.warning(f"Failed to resolve order categories from tracking links: {exc}")
+        return category_map
+
+    def _fetch_aliexpress_category_map(self, product_ids: Iterable[str]) -> dict[str, str]:
+        client = self._product_details_client
+        if client is None or not getattr(client, "is_enabled", False):
+            client = next(iter(self._enabled_clients().values()), None)
+        if client is None:
+            return {}
+
+        category_map: dict[str, str] = {}
+        for product_id in list(dict.fromkeys(product_ids))[:MAX_ALIEXPRESS_CATEGORY_LOOKUPS]:
+            details = client.get_product_details(product_id)
+            if details is None:
+                continue
+            category = map_aliexpress_category(details.category)
+            if category:
+                category_map[product_id] = category
         return category_map
 
     def _build_order_rows(self, account_key: str, order: AffiliateOrder) -> dict:
@@ -190,3 +248,15 @@ class AffiliateOrderSync:
 
 def _chunked(items: list, size: int) -> list[list]:
     return [items[index:index + size] for index in range(0, len(items), size)]
+
+
+def _coerce_metadata(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            loaded = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+    return {}

@@ -214,6 +214,7 @@ async def main():
             clients=affiliate_clients,
             url=config.supabase.url,
             key=config.supabase.service_key,
+            product_details_client=catalog_client,
             lookback_days=config.affiliate_orders.lookback_days,
             page_size=config.affiliate_orders.page_size,
             locale_site=config.affiliate_orders.locale_site,

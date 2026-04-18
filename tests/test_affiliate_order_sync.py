@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bot.affiliate_order_sync import AffiliateOrderSync
-from bot.aliexpress_client import AffiliateOrder
+from bot.aliexpress_client import AffiliateOrder, ProductDetails
 
 
 def _make_order(
@@ -54,6 +54,7 @@ def mock_supabase():
         client.table().select().in_().execute.return_value = SimpleNamespace(
             data=[{"product_id": "2002", "category": "tech"}]
         )
+        client.table().select().order().limit().execute.return_value = SimpleNamespace(data=[])
         mock_create.return_value = client
         yield client
 
@@ -99,3 +100,74 @@ async def test_sync_recent_orders_returns_zero_when_no_enabled_clients(mock_supa
 
     assert result == {"orders": 0, "accounts": 0}
     mock_supabase.table().upsert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_sync_recent_orders_falls_back_to_tracking_link_category(mock_supabase):
+    mock_supabase.table().select().in_().execute.return_value = SimpleNamespace(data=[])
+    mock_supabase.table().select().order().limit().execute.return_value = SimpleNamespace(
+        data=[{"metadata": {"product_id": "2002", "category": "toys"}}]
+    )
+
+    ali_client = MagicMock()
+    ali_client.is_enabled = True
+    ali_client.get_orders.side_effect = [
+        ([_make_order()], 1),
+        ([], 0),
+    ]
+    ali_client.get_product_details.return_value = None
+
+    sync = AffiliateOrderSync(
+        clients={"primary": ali_client},
+        url="https://test.supabase.co",
+        key="service-key",
+    )
+
+    result = await sync.sync_recent_orders()
+
+    assert result["orders"] == 1
+    upsert_args = mock_supabase.table().upsert.call_args[0][0]
+    assert upsert_args[0]["resolved_category"] == "toys"
+
+
+@pytest.mark.asyncio
+async def test_sync_recent_orders_falls_back_to_aliexpress_product_category(mock_supabase):
+    mock_supabase.table().select().in_().execute.return_value = SimpleNamespace(data=[])
+    mock_supabase.table().select().order().limit().execute.return_value = SimpleNamespace(data=[])
+
+    ali_client = MagicMock()
+    ali_client.is_enabled = True
+    ali_client.get_orders.side_effect = [
+        ([_make_order()], 1),
+        ([], 0),
+    ]
+
+    catalog_client = MagicMock()
+    catalog_client.is_enabled = True
+    catalog_client.get_product_details.return_value = ProductDetails(
+        title="Sample Product",
+        price=12.3,
+        sale_price=10.0,
+        app_sale_price=None,
+        currency="USD",
+        images=[],
+        rating=None,
+        orders_count=None,
+        commission_rate=None,
+        category="Toys & Hobbies",
+        promo_codes=[],
+    )
+
+    sync = AffiliateOrderSync(
+        clients={"primary": ali_client},
+        url="https://test.supabase.co",
+        key="service-key",
+        product_details_client=catalog_client,
+    )
+
+    result = await sync.sync_recent_orders()
+
+    assert result["orders"] == 1
+    upsert_args = mock_supabase.table().upsert.call_args[0][0]
+    assert upsert_args[0]["resolved_category"] == "toys"
+    catalog_client.get_product_details.assert_called_once_with("2002")

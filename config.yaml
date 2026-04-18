@@ -18,6 +18,9 @@ marketing:
   site_url: "https://www.dilim.net/"
   invite_links_path: "website/src/data/invite-links.json"
 
+tracking:
+  base_url: ""
+
 openai:
   model: "gpt-4o-mini"
 
@@ -28,23 +31,30 @@ publishing:
   quiet_hours_start: 23
   quiet_hours_end: 7
   hot_products_interval_hours: 4
-  hot_products_per_run: 3
+  hot_products_per_run: 1
+  weekend_reduced_rate_factor: 0.3
+  weekend_reduced_start_weekday: 4
+  weekend_reduced_start_hour: 18
+  weekend_reduced_end_weekday: 5
+  weekend_reduced_end_hour: 18
   destinations:
     tg_main:
       enabled: true
       platform: "telegram"
       target: "@hadilimshelisrael"
       categories: ["*"]
+      min_publish_interval_minutes: 120
     wa_general:
       enabled: true
       platform: "whatsapp"
       target: "120363406689019707@g.us"
-      categories: ["*"]
+      categories: ["tech", "toys", "other", "auto"]
     wa_main:
       enabled: true
       platform: "whatsapp"
       target: "120363426624009388@g.us"
       categories: ["other", "toys", "auto"]
+      min_publish_interval_minutes: 120
     wa_tech:
       enabled: true
       platform: "whatsapp"
@@ -66,16 +76,59 @@ publishing:
       target: "120363408711395449@g.us"
       categories: ["beauty"]
     fb_main:
-      enabled: false
+      enabled: true
       platform: "facebook"
       target: "https://www.facebook.com/groups/354824431284295"
       categories: ["*"]
-    web_feed:
+      min_publish_interval_minutes: 240
+    fb_beer_sheva_together:
       enabled: true
-      platform: "web"
-      target: "default-feed"
+      platform: "facebook"
+      target: "https://www.facebook.com/share/g/14dDspWSykd/?mibextid=wwXIfr"
       categories: ["*"]
-
+      min_publish_interval_minutes: 240
+    fb_netivot_together:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/305617210108000"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_healthy_lifestyle:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/409528052561285"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_beer_sheva_businesses:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/479652502411311"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_merhavim_updates:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/295856453855639"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_group_534710937121700:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/534710937121700"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_group_441237999359320:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/441237999359320"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
+    fb_group_434701246897267:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/434701246897267"
+      categories: ["*"]
+      min_publish_interval_minutes: 240
 dedup:
   window_hours: 24
   image_hash_threshold: 5
@@ -94,11 +147,11 @@ parser:
     - "a.aliexpress.com"
 
 quality:
-  min_score_external: 45
-  min_score_hot_products: 60
+  min_score_external: 70
+  min_score_hot_products: 80
   manual_priority: 1000
   idle_destination_hours: 6
-  idle_min_score: 20
+  idle_min_score: 70
   idle_priority_boost: 150
 
 dashboard:

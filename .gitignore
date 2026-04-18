@@ -5,6 +5,7 @@ __pycache__/
 *.session
 *.session-journal
 data/deals.db
+data/*.db
 data/images/*
 !data/images/.gitkeep
 assets/logo.png
@@ -22,3 +23,5 @@ website/.next/
 website/.env.local
 facebook/.env
 .vercel
+.claude/
+graphify-out/

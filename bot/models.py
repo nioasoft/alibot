@@ -90,6 +90,50 @@ class DailyStat(Base):
     api_calls: Mapped[int] = mapped_column(default=0)
 
 
+class AffiliateLinkToken(Base):
+    __tablename__ = "affiliate_link_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token: Mapped[str] = mapped_column(unique=True)
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"))
+    queue_item_id: Mapped[int] = mapped_column(ForeignKey("publish_queue.id"), unique=True)
+    destination_key: Mapped[str]
+    platform: Mapped[str]
+    source_group: Mapped[str]
+    affiliate_account_key: Mapped[str | None]
+    tracking_id: Mapped[str | None]
+    custom_parameters: Mapped[str | None]
+    target_url: Mapped[str]
+    created_at: Mapped[datetime.datetime]
+
+    __table_args__ = (
+        Index("idx_affiliate_link_tokens_queue_item", "queue_item_id"),
+        Index("idx_affiliate_link_tokens_deal", "deal_id"),
+    )
+
+
+class AffiliateClickEvent(Base):
+    __tablename__ = "affiliate_click_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    token_id: Mapped[int] = mapped_column(ForeignKey("affiliate_link_tokens.id"))
+    deal_id: Mapped[int] = mapped_column(ForeignKey("deals.id"))
+    queue_item_id: Mapped[int] = mapped_column(ForeignKey("publish_queue.id"))
+    destination_key: Mapped[str]
+    platform: Mapped[str]
+    source_group: Mapped[str]
+    clicked_at: Mapped[datetime.datetime]
+    ip_hash: Mapped[str | None]
+    user_agent: Mapped[str | None]
+    referer: Mapped[str | None]
+
+    __table_args__ = (
+        Index("idx_affiliate_click_events_clicked_at", "clicked_at"),
+        Index("idx_affiliate_click_events_token_id", "token_id"),
+        Index("idx_affiliate_click_events_queue_item_id", "queue_item_id"),
+    )
+
+
 def init_db(db_path: str) -> sessionmaker[Session]:
     """Create engine, ensure tables exist, return session factory.
 

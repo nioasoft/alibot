@@ -35,4 +35,4 @@ async def test_send_deal_uses_rotating_invite_footer():
     sent_text = client.send_message.await_args.args[1]
     assert "🛒 לרכישה: https://s.click.aliexpress.com/e/_test" in sent_text
     assert "💬 להצטרפות לקבוצת הוואטסאפ: https://chat.whatsapp.com/test" in sent_text
-    assert sent_text.endswith("🌐 להצטרפות לכל הקבוצות: https://www.dilim.net/")
+    assert sent_text.endswith("🌐 להצטרפות לקבוצות לפי תחומי עניין: https://www.dilim.net/")

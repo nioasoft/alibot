@@ -32,5 +32,5 @@ class FooterLinkBuilder:
         if invite_link is not None:
             lines.append(f"{invite_link.footer_label}: {invite_link.url}")
         if self._site_url:
-            lines.append(f"🌐 להצטרפות לכל הקבוצות: {self._site_url}")
+            lines.append(f"🌐 להצטרפות לקבוצות לפי תחומי עניין: {self._site_url}")
         return "\n\n".join(lines)

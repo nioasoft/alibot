@@ -62,6 +62,6 @@ app.post("/publish", async (req, res) => {
   }
 });
 
-app.listen(config.serverPort, () => {
-  console.log(`Facebook POC service listening on http://localhost:${config.serverPort}`);
+app.listen(config.serverPort, config.serverHost, () => {
+  console.log(`Facebook POC service listening on http://${config.serverHost}:${config.serverPort}`);
 });

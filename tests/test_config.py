@@ -64,13 +64,20 @@ marketing:
     assert config.publishing.destinations is not None
     assert config.publishing.destinations["telegram_default"].target == "@my_channel"
     assert config.publishing.destinations["telegram_default"].platform == "telegram"
+    assert config.publishing.weekend_reduced_rate_factor == 1.0
+    assert config.publishing.weekend_reduced_start_weekday == 4
+    assert config.publishing.weekend_reduced_start_hour == 18
+    assert config.publishing.weekend_reduced_end_weekday == 5
+    assert config.publishing.weekend_reduced_end_hour == 18
     assert config.aliexpress.catalog_account == "primary"
     assert config.aliexpress.affiliate_distribution == {"primary": 100}
     assert config.marketing.site_url == "https://www.dilim.net/"
     assert config.marketing.invite_links == []
-    assert config.quality.min_score_external == 45
+    assert config.tracking.base_url == ""
+    assert config.quality.min_score_external == 70
     assert config.quality.idle_destination_hours == 6
-    assert config.quality.idle_min_score == 20
+    assert config.quality.min_score_hot_products == 80
+    assert config.quality.idle_min_score == 70
     assert config.quality.idle_priority_boost == 150
     assert config.facebook.service_url == "http://localhost:3002"
 
@@ -108,6 +115,8 @@ telegram:
 marketing:
   site_url: "https://www.dilim.net/"
   invite_links_path: "invite-links.json"
+tracking:
+  base_url: "https://trk.dilim.net"
 openai:
   model: "gpt-4o-mini"
 publishing:
@@ -116,11 +125,17 @@ publishing:
   max_posts_per_hour: 4
   quiet_hours_start: 23
   quiet_hours_end: 7
+  weekend_reduced_rate_factor: 0.3
+  weekend_reduced_start_weekday: 4
+  weekend_reduced_start_hour: 18
+  weekend_reduced_end_weekday: 5
+  weekend_reduced_end_hour: 18
   destinations:
     tg_main:
       platform: telegram
       target: "@ch1"
       categories: ["*"]
+      min_publish_interval_minutes: 120
 dashboard:
   port: 8080
   auto_refresh_seconds: 30
@@ -159,8 +174,15 @@ quality:
     assert config.telegram.manual_source_groups == ["manual"]
     assert config.openai.api_key == "sk-test-key"
     assert config.marketing.site_url == "https://www.dilim.net/"
+    assert config.tracking.base_url == "https://trk.dilim.net"
     assert len(config.marketing.invite_links) == 1
     assert config.marketing.invite_links[0].platform == "telegram"
+    assert config.publishing.destinations["tg_main"].min_publish_interval_minutes == 120
+    assert config.publishing.weekend_reduced_rate_factor == 0.3
+    assert config.publishing.weekend_reduced_start_weekday == 4
+    assert config.publishing.weekend_reduced_start_hour == 18
+    assert config.publishing.weekend_reduced_end_weekday == 5
+    assert config.publishing.weekend_reduced_end_hour == 18
     assert config.aliexpress.catalog_account == "secondary"
     assert config.aliexpress.accounts["primary"].app_key == "pk"
     assert config.aliexpress.accounts["secondary"].tracking_id == "st"

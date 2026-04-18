@@ -3,7 +3,7 @@
 {% block content %}
 <a href="/deals" class="text-blue-600 hover:underline text-sm">← חזרה לרשימה</a>
 <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <h2 class="font-semibold text-lg mb-4">פרטי דיל #{{ deal.id }}</h2>
         <dl class="space-y-3 text-sm">
             <div><dt class="text-gray-500">מוצר</dt><dd class="font-medium">{{ deal.product_name }}</dd></div>
@@ -19,28 +19,33 @@
         </dl>
     </div>
     <div class="space-y-4">
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
             <h3 class="font-semibold mb-2">טקסט מקורי</h3>
             <pre class="text-sm bg-gray-50 p-3 rounded whitespace-pre-wrap">{{ deal.original_text }}</pre>
         </div>
-        <div class="bg-white rounded-lg shadow p-6">
+        <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
             <h3 class="font-semibold mb-2">טקסט משוכתב</h3>
             <pre class="text-sm bg-blue-50 p-3 rounded whitespace-pre-wrap">{{ deal.rewritten_text }}</pre>
         </div>
     </div>
 </div>
 {% if queue_items %}
-<div class="mt-6 bg-white rounded-lg shadow p-6">
+<div class="mt-6 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
     <h3 class="font-semibold mb-2">סטטוס פרסום</h3>
-    <div class="text-sm space-y-1">
+    <div class="text-sm space-y-3">
         {% for queue_item in queue_items %}
-        <div class="border rounded p-3">
-            <div>יעד: <strong>{{ queue_item.destination_key }}</strong></div>
-            <div>פלטפורמה: {{ queue_item.platform }}</div>
-            <div>Target: {{ queue_item.target_ref }}</div>
-            <div>סטטוס: <strong>{{ queue_item.status }}</strong></div>
-            {% if queue_item.published_at %}<div>פורסם: {{ queue_item.published_at | localdatetime }}</div>{% endif %}
-            {% if queue_item.error_message %}<div class="text-red-600">שגיאה: {{ queue_item.error_message }}</div>{% endif %}
+        <div class="border border-slate-200 rounded-2xl p-4 bg-slate-50">
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ queue_item.platform_class }}">{{ queue_item.platform_label }}</span>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ queue_item.queue_lane_class }}">{{ queue_item.queue_lane_label }}</span>
+                <strong class="text-slate-800">{{ queue_item.destination_name }}</strong>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ queue_item.status_class }}">{{ queue_item.status_label }}</span>
+            </div>
+            <div class="mt-2 text-slate-600">Target: <span class="font-mono text-xs">{{ queue_item.target_ref }}</span></div>
+            <div class="mt-1 text-xs text-slate-500">תצוגה קצרה: {{ queue_item.target_display }}</div>
+            <div class="mt-1 text-xs text-slate-400">מפתח יעד: {{ queue_item.destination_key }}</div>
+            {% if queue_item.published_at %}<div class="mt-2">פורסם: {{ queue_item.published_at | localdatetime }}</div>{% else %}<div class="mt-2">מתוזמן: {{ queue_item.scheduled_after | localdatetime }}</div>{% endif %}
+            {% if queue_item.error_message %}<div class="mt-2 text-red-600">שגיאה: {{ queue_item.error_message }}</div>{% endif %}
         </div>
         {% endfor %}
     </div>

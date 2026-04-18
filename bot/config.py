@@ -17,6 +17,7 @@ class DestinationConfig:
     platform: str
     target: str
     categories: list[str]
+    min_publish_interval_minutes: int = 0
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,11 @@ class MarketingConfig:
 
 
 @dataclass(frozen=True)
+class TrackingConfig:
+    base_url: str
+
+
+@dataclass(frozen=True)
 class OpenAIConfig:
     api_key: str
     model: str
@@ -61,6 +67,11 @@ class PublishingConfig:
     quiet_hours_end: int
     hot_products_interval_hours: int = 4
     hot_products_per_run: int = 3
+    weekend_reduced_rate_factor: float = 1.0
+    weekend_reduced_start_weekday: int = 4
+    weekend_reduced_start_hour: int = 18
+    weekend_reduced_end_weekday: int = 5
+    weekend_reduced_end_hour: int = 18
     destinations: dict[str, DestinationConfig] | None = None
 
 
@@ -141,6 +152,7 @@ class SupabaseConfig:
 class AppConfig:
     telegram: TelegramConfig
     marketing: MarketingConfig
+    tracking: TrackingConfig
     openai: OpenAIConfig
     publishing: PublishingConfig
     dedup: DedupConfig
@@ -181,6 +193,7 @@ def _load_destinations(raw: dict) -> dict[str, DestinationConfig]:
                 platform=str(dest_raw["platform"]),
                 target=str(dest_raw["target"]),
                 categories=[str(cat) for cat in dest_raw.get("categories", ["other"])],
+                min_publish_interval_minutes=max(0, int(dest_raw.get("min_publish_interval_minutes", 0))),
             )
         return destinations
 
@@ -307,6 +320,13 @@ def _load_marketing_config(raw: dict, config_dir: Path) -> MarketingConfig:
     )
 
 
+def _load_tracking_config(raw: dict) -> TrackingConfig:
+    tracking_raw = raw.get("tracking", {})
+    return TrackingConfig(
+        base_url=str(tracking_raw.get("base_url", "")).strip().rstrip("/"),
+    )
+
+
 def load_config(config_path: str) -> AppConfig:
     config_file = Path(config_path).resolve()
     with open(config_file, encoding="utf-8") as f:
@@ -330,6 +350,7 @@ def load_config(config_path: str) -> AppConfig:
             channel_link=raw["telegram"].get("channel_link", ""),
         ),
         marketing=_load_marketing_config(raw, config_file.parent),
+        tracking=_load_tracking_config(raw),
         openai=OpenAIConfig(
             api_key=_require_env("OPENAI_API_KEY"),
             model=raw["openai"]["model"],
@@ -342,6 +363,11 @@ def load_config(config_path: str) -> AppConfig:
             quiet_hours_end=raw["publishing"]["quiet_hours_end"],
             hot_products_interval_hours=raw["publishing"].get("hot_products_interval_hours", 4),
             hot_products_per_run=raw["publishing"].get("hot_products_per_run", 3),
+            weekend_reduced_rate_factor=float(raw["publishing"].get("weekend_reduced_rate_factor", 1.0)),
+            weekend_reduced_start_weekday=int(raw["publishing"].get("weekend_reduced_start_weekday", 4)),
+            weekend_reduced_start_hour=int(raw["publishing"].get("weekend_reduced_start_hour", 18)),
+            weekend_reduced_end_weekday=int(raw["publishing"].get("weekend_reduced_end_weekday", 5)),
+            weekend_reduced_end_hour=int(raw["publishing"].get("weekend_reduced_end_hour", 18)),
             destinations=_load_destinations(raw),
         ),
         dedup=DedupConfig(
@@ -359,11 +385,11 @@ def load_config(config_path: str) -> AppConfig:
             supported_domains=raw["parser"]["supported_domains"],
         ),
         quality=QualityConfig(
-            min_score_external=int(raw.get("quality", {}).get("min_score_external", 45)),
-            min_score_hot_products=int(raw.get("quality", {}).get("min_score_hot_products", 60)),
+            min_score_external=int(raw.get("quality", {}).get("min_score_external", 70)),
+            min_score_hot_products=int(raw.get("quality", {}).get("min_score_hot_products", 80)),
             manual_priority=int(raw.get("quality", {}).get("manual_priority", 1000)),
             idle_destination_hours=int(raw.get("quality", {}).get("idle_destination_hours", 6)),
-            idle_min_score=int(raw.get("quality", {}).get("idle_min_score", 20)),
+            idle_min_score=int(raw.get("quality", {}).get("idle_min_score", 70)),
             idle_priority_boost=int(raw.get("quality", {}).get("idle_priority_boost", 150)),
         ),
         dashboard=DashboardConfig(

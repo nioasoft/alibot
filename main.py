@@ -22,11 +22,13 @@ from bot.config import AppConfig, load_config
 from bot.dedup import DuplicateChecker
 from bot.exchange_rate import fetch_usd_ils_rate
 from bot.facebook_publisher import FacebookPublisher
+from bot.fork_debug import install_fork_debugging
 from bot.hot_products import HotProductFetcher
 from bot.image_processor import ImageProcessor
 from bot.listener import TelegramListener
 from bot.models import init_db
 from bot.notifier import Notifier
+from bot.openai_runtime import install_openai_platform_override
 from bot.parser import DealParser
 from bot.pipeline import Pipeline
 from bot.publisher import DealPublisher
@@ -89,6 +91,8 @@ def _build_aliexpress_clients(config: AppConfig) -> tuple[AliExpressClientPool, 
 async def main():
     load_dotenv()
     _setup_logging()
+    install_fork_debugging()
+    install_openai_platform_override()
     logger.info("Starting AliExpress Deal Bot...")
 
     config = load_config("config.yaml")
@@ -190,7 +194,14 @@ async def main():
         facebook_publisher=facebook_publisher,
         web_publisher=web_publisher,
         site_url=config.marketing.site_url,
+        tracking_base_url=config.tracking.base_url,
         invite_links=config.marketing.invite_links,
+        destinations=config.publishing.destinations,
+        weekend_reduced_rate_factor=config.publishing.weekend_reduced_rate_factor,
+        weekend_reduced_start_weekday=config.publishing.weekend_reduced_start_weekday,
+        weekend_reduced_start_hour=config.publishing.weekend_reduced_start_hour,
+        weekend_reduced_end_weekday=config.publishing.weekend_reduced_end_weekday,
+        weekend_reduced_end_hour=config.publishing.weekend_reduced_end_hour,
     )
 
     admin = AdminCommands(

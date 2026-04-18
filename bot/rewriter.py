@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from loguru import logger
 
 from bot.aliexpress_client import PromoCode
+from bot.openai_runtime import install_openai_platform_override
 
 _SYSTEM_PROMPT = """אתה כותב תוכן לערוץ דילים בטלגרם. אתה מקבל מידע על דיל ומחזיר JSON.
 
@@ -53,6 +54,7 @@ class RewriteResult:
 
 class ContentRewriter:
     def __init__(self, api_key: str, model: str):
+        install_openai_platform_override()
         self._client = AsyncOpenAI(api_key=api_key)
         self._model = model
 

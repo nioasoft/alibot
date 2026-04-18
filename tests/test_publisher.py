@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.config import InviteLinkConfig
-from bot.models import Deal, PublishQueueItem, RawMessage
+from bot.config import DestinationConfig, InviteLinkConfig
+from bot.models import AffiliateLinkToken, Deal, PublishQueueItem, RawMessage
 from bot.publisher import DealPublisher
 
 
@@ -76,6 +76,7 @@ def publisher(db_session):
         facebook_publisher=facebook,
         web_publisher=web,
         site_url="https://www.dilim.net/",
+        tracking_base_url="https://trk.dilim.net",
         invite_links=[
             InviteLinkConfig(
                 url="https://t.me/test",
@@ -84,6 +85,35 @@ def publisher(db_session):
                 footer_label="📢 להצטרפות לטלגרם",
             )
         ],
+        destinations={
+            "tg_main": DestinationConfig(
+                key="tg_main",
+                enabled=True,
+                platform="telegram",
+                target="@main",
+                categories=["*"],
+            ),
+            "wa_tech": DestinationConfig(
+                key="wa_tech",
+                enabled=True,
+                platform="whatsapp",
+                target="120@g.us",
+                categories=["tech"],
+            ),
+            "fb_beer_sheva_together": DestinationConfig(
+                key="fb_beer_sheva_together",
+                enabled=True,
+                platform="facebook",
+                target="https://www.facebook.com/groups/deals20",
+                categories=["*"],
+                min_publish_interval_minutes=120,
+            ),
+        },
+        weekend_reduced_rate_factor=0.3,
+        weekend_reduced_start_weekday=4,
+        weekend_reduced_start_hour=18,
+        weekend_reduced_end_weekday=5,
+        weekend_reduced_end_hour=18,
     )
 
 
@@ -122,6 +152,20 @@ class TestQueuePicking:
         assert next_item is not None
         assert next_item.target_ref == "group-b"
 
+    def test_can_pick_main_and_category_queues_separately(
+        self, publisher: DealPublisher, db_session
+    ):
+        _, main_item = _seed_deal(db_session, deal_id=20, platform="telegram", target_ref="@main")
+        _, category_item = _seed_deal(db_session, deal_id=21, platform="whatsapp", target_ref="120@g.us")
+        main_item.destination_key = "tg_main"
+        category_item.destination_key = "wa_tech"
+        main_item.priority = 70
+        category_item.priority = 90
+        db_session.commit()
+
+        assert publisher.pick_next(queue_lane="main").id == main_item.id
+        assert publisher.pick_next(queue_lane="category").id == category_item.id
+
 
 class TestSocialFooter:
     def test_build_social_text_adds_rotating_invite_and_domain(
@@ -129,11 +173,11 @@ class TestSocialFooter:
     ):
         deal, _ = _seed_deal(db_session, deal_id=77, platform="whatsapp", target_ref="120@g.us")
 
-        text = publisher._build_social_text(deal)
+        text = publisher._build_social_text(deal, "https://trk.dilim.net/go/demo")
 
-        assert "🛒 לרכישה: https://aliexpress.com/item/123.html" in text
+        assert "🛒 לרכישה: https://trk.dilim.net/go/demo" in text
         assert "📢 להצטרפות לטלגרם: https://t.me/test" in text
-        assert text.endswith("🌐 להצטרפות לכל הקבוצות: https://www.dilim.net/")
+        assert text.endswith("🌐 להצטרפות לקבוצות לפי תחומי עניין: https://www.dilim.net/")
 
 
 class TestQuietHours:
@@ -157,6 +201,65 @@ class TestRateLimit:
     def test_rate_limit_allows_under_max(self, publisher: DealPublisher):
         assert publisher.is_rate_limited("@my_channel") is False
 
+    def test_destination_min_interval_blocks_recent_publish(self, publisher: DealPublisher, db_session):
+        _, recent = _seed_deal(
+            db_session,
+            deal_id=150,
+            platform="facebook",
+            target_ref="https://www.facebook.com/groups/deals20",
+        )
+        recent.destination_key = "fb_beer_sheva_together"
+        recent.status = "published"
+        recent.published_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=90)
+        db_session.commit()
+
+        assert publisher.is_rate_limited(
+            "https://www.facebook.com/groups/deals20",
+            "fb_beer_sheva_together",
+        ) is True
+
+    def test_weekend_reduction_limits_non_facebook_to_thirty_percent(
+        self, publisher: DealPublisher, db_session
+    ):
+        for i in range(3):
+            _, qi = _seed_deal(
+                db_session,
+                deal_id=160 + i,
+                platform="telegram",
+                target_ref="@main",
+            )
+            qi.destination_key = "tg_main"
+            qi.status = "published"
+            qi.published_at = datetime.datetime(2026, 4, 18, 8, 30, tzinfo=datetime.UTC)
+            db_session.commit()
+
+        assert publisher.is_rate_limited(
+            "@main",
+            "tg_main",
+            now=datetime.datetime(2026, 4, 18, 12, 0),
+        ) is True
+
+    def test_weekend_reduction_does_not_apply_outside_window(
+        self, publisher: DealPublisher, db_session
+    ):
+        for i in range(3):
+            _, qi = _seed_deal(
+                db_session,
+                deal_id=170 + i,
+                platform="telegram",
+                target_ref="@main",
+            )
+            qi.destination_key = "tg_main"
+            qi.status = "published"
+            qi.published_at = datetime.datetime(2026, 4, 17, 12, 30, tzinfo=datetime.UTC)
+            db_session.commit()
+
+        assert publisher.is_rate_limited(
+            "@main",
+            "tg_main",
+            now=datetime.datetime(2026, 4, 17, 16, 0),
+        ) is False
+
 
 @pytest.mark.asyncio
 class TestPublishExecution:
@@ -169,6 +272,10 @@ class TestPublishExecution:
         assert qi.status == "published"
         assert qi.message_id == 99999
         assert qi.published_at is not None
+        tracked_link = publisher._telegram.send_deal.await_args.kwargs["link"]
+        assert tracked_link.startswith("https://trk.dilim.net/go/")
+        token = db_session.query(AffiliateLinkToken).filter_by(queue_item_id=qi.id).one()
+        assert tracked_link.endswith(token.token)
 
     async def test_publish_whatsapp_item_marks_published(self, publisher: DealPublisher, db_session):
         deal, qi = _seed_deal(db_session, deal_id=2, platform="whatsapp", target_ref="120@g.us")
@@ -179,6 +286,8 @@ class TestPublishExecution:
         assert qi.status == "published"
         assert qi.message_id is None
         publisher._whatsapp.send_deal.assert_awaited_once()
+        sent_text = publisher._whatsapp.send_deal.await_args.kwargs["text"]
+        assert "https://trk.dilim.net/go/" in sent_text
 
     async def test_publish_facebook_item_marks_published(self, publisher: DealPublisher, db_session):
         deal, qi = _seed_deal(
@@ -194,3 +303,64 @@ class TestPublishExecution:
         assert qi.status == "published"
         assert qi.message_id is None
         publisher._facebook.send_deal.assert_awaited_once()
+        assert publisher._facebook.send_deal.await_args.kwargs["purchase_url"].startswith(
+            "https://trk.dilim.net/go/"
+        )
+
+    async def test_check_queue_processes_one_item_per_lane(self, publisher: DealPublisher, db_session):
+        main_deal, main_qi = _seed_deal(db_session, deal_id=40, platform="telegram", target_ref="@main")
+        category_deal, category_qi = _seed_deal(
+            db_session,
+            deal_id=41,
+            platform="whatsapp",
+            target_ref="120@g.us",
+        )
+        main_qi.destination_key = "tg_main"
+        category_qi.destination_key = "wa_tech"
+        main_qi.priority = 80
+        category_qi.priority = 75
+        db_session.commit()
+
+        await publisher.check_queue()
+
+        db_session.refresh(main_qi)
+        db_session.refresh(category_qi)
+        assert main_qi.status == "published"
+        assert category_qi.status == "published"
+        publisher._telegram.send_deal.assert_awaited()
+        publisher._whatsapp.send_deal.assert_awaited()
+
+    async def test_check_queue_skips_rate_limited_candidate_and_publishes_next_main_item(
+        self, publisher: DealPublisher, db_session
+    ):
+        _, slow_published = _seed_deal(
+            db_session,
+            deal_id=50,
+            platform="facebook",
+            target_ref="https://www.facebook.com/groups/deals20",
+        )
+        slow_published.destination_key = "fb_beer_sheva_together"
+        slow_published.status = "published"
+        slow_published.published_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=30)
+
+        _, slow_queued = _seed_deal(
+            db_session,
+            deal_id=51,
+            platform="facebook",
+            target_ref="https://www.facebook.com/groups/deals20",
+        )
+        slow_queued.destination_key = "fb_beer_sheva_together"
+        slow_queued.priority = 95
+
+        _, tg_main = _seed_deal(db_session, deal_id=52, platform="telegram", target_ref="@main")
+        tg_main.destination_key = "tg_main"
+        tg_main.priority = 80
+        db_session.commit()
+
+        await publisher.check_queue()
+
+        db_session.refresh(slow_queued)
+        db_session.refresh(tg_main)
+        assert slow_queued.status == "queued"
+        assert tg_main.status == "published"
+        publisher._telegram.send_deal.assert_awaited()

@@ -16,7 +16,24 @@
             <div><dt class="text-gray-500">דיליי מינימלי</dt><dd>{{ config.publishing.min_delay_seconds }} שניות</dd></div>
             <div><dt class="text-gray-500">מקסימום לשעה</dt><dd>{{ config.publishing.max_posts_per_hour }}</dd></div>
             <div><dt class="text-gray-500">שעות שקט</dt><dd>{{ config.publishing.quiet_hours_start }}:00 — {{ config.publishing.quiet_hours_end }}:00</dd></div>
-            <div><dt class="text-gray-500">יעדים</dt><dd>{% for key, dest in config.publishing.destinations.items() %}<div><span class="text-gray-400">{{ key }}</span>: {{ dest.platform }} → {{ dest.target }} ({{ dest.categories | join(', ') }})</div>{% endfor %}</dd></div>
+            <div>
+                <dt class="text-gray-500 mb-2">יעדים</dt>
+                <dd class="space-y-2">
+                    {% for row in destination_rows %}
+                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ row.platform_class }}">{{ row.platform_label }}</span>
+                            <span class="font-medium">{{ row.name }}</span>
+                            <span class="text-xs text-slate-400">{{ row.key }}</span>
+                            {% if not row.enabled %}<span class="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700">כבוי</span>{% endif %}
+                        </div>
+                        <div class="mt-1 text-xs text-slate-600">{{ row.target_display }}</div>
+                        <div class="mt-1 text-xs text-slate-400">{{ row.target_ref }}</div>
+                        <div class="mt-1 text-xs text-slate-500">קטגוריות: {{ row.categories | join(', ') }}</div>
+                    </div>
+                    {% endfor %}
+                </dd>
+            </div>
         </dl>
     </div>
     <div class="bg-white rounded-lg shadow p-6">

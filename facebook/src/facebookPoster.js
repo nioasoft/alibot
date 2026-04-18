@@ -27,10 +27,42 @@ const POST_BUTTON_SELECTORS = [
   'div[role="button"][aria-label="פרסם"]',
 ];
 
+const PUBLISH_SUCCESS_PATTERNS = [
+  /your post was shared/i,
+  /post published/i,
+  /post shared/i,
+  /הפוסט שלך פורסם/i,
+  /הפוסט פורסם/i,
+];
+
+const PUBLISH_FAILURE_PATTERNS = [
+  /try again/i,
+  /couldn'?t post/i,
+  /something went wrong/i,
+  /we limit how often/i,
+  /unable to post/i,
+  /נסה שוב/i,
+  /לא הצלחנו/i,
+  /משהו השתבש/i,
+  /הפעולה נחסמה/i,
+];
+
 const FILE_INPUT_SELECTORS = [
   'input[type="file"]',
+  'input[type="file"][accept*="image"]',
   'input[accept*="image"]',
 ];
+
+const ATTACHMENT_READY_SELECTORS = [
+  'img[src^="blob:"]',
+  'img[src^="data:"]',
+  '[aria-label*="Remove photo"]',
+  '[aria-label*="Delete photo"]',
+  '[aria-label*="הסר תמונה"]',
+  '[aria-label*="מחק תמונה"]',
+];
+
+const PUBLISH_CONFIRM_TIMEOUT_MS = Number(process.env.FB_PUBLISH_CONFIRM_TIMEOUT_MS || 15000);
 
 async function exists(filePath) {
   try {
@@ -56,6 +88,27 @@ async function firstVisible(page, selectors, timeout = 3000) {
     }
   }
   return null;
+}
+
+async function firstAttached(scope, selectors, timeout = 3000) {
+  for (const selector of selectors) {
+    const locator = scope.locator(selector).first();
+    try {
+      await locator.waitFor({ state: "attached", timeout });
+      return locator;
+    } catch {
+      // try next selector
+    }
+  }
+  return null;
+}
+
+async function isVisible(locator) {
+  try {
+    return await locator.isVisible();
+  } catch {
+    return false;
+  }
 }
 
 async function openComposer(page) {
@@ -140,7 +193,32 @@ async function openComposer(page) {
   }
 }
 
-async function uploadImage(page, imagePath) {
+async function waitForImageAttachment(page, dialog, initialImageCount) {
+  const deadline = Date.now() + 10000;
+
+  while (Date.now() < deadline) {
+    const imageCount = await dialog.locator("img").count();
+    if (imageCount > initialImageCount) {
+      return { confirmation: "image-count-incremented", imageCount };
+    }
+
+    const attachmentReady = await firstVisible(dialog, ATTACHMENT_READY_SELECTORS, 250);
+    if (attachmentReady != null) {
+      return { confirmation: "attachment-selector-visible" };
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error("Image upload did not produce a visible attachment in the Facebook composer");
+}
+
+async function setFilesAndConfirm(page, dialog, locator, resolved, initialImageCount) {
+  await locator.setInputFiles(resolved);
+  return waitForImageAttachment(page, dialog, initialImageCount);
+}
+
+async function uploadImage(page, imagePath, dialog) {
   if (!imagePath) {
     return;
   }
@@ -150,38 +228,78 @@ async function uploadImage(page, imagePath) {
     throw new Error(`Image file not found: ${resolved}`);
   }
 
-  const dialog = page.locator('[role="dialog"]').first();
+  const composerDialog = dialog ?? page.locator('[role="dialog"]').first();
+  const initialImageCount = await composerDialog.locator("img").count();
+  const uploadCandidates = [
+    composerDialog.getByRole("button", { name: /photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i }).first(),
+    composerDialog.getByText(/photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i).first(),
+    composerDialog.locator('[aria-label*="photo"], [aria-label*="image"], [aria-label*="video"], [aria-label*="תמונה"], [aria-label*="וידאו"]').first(),
+    composerDialog.locator('div[role="button"]').nth(3),
+  ];
 
-  let fileInput = await firstVisible(dialog, FILE_INPUT_SELECTORS, 2000);
-  if (fileInput == null) {
-    const uploadCandidates = [
-      dialog.getByRole("button", { name: /photo|image|תמונה|תמונות/i }).first(),
-      dialog.getByText(/photo|image|תמונה|תמונות/i).first(),
-      dialog.locator('[aria-label*="photo"], [aria-label*="image"], [aria-label*="תמונה"]').first(),
-      dialog.locator('div[role="button"]').nth(3),
-    ];
+  const genericButtons = (await composerDialog.locator('div[role="button"]').all()).slice(-12);
+  const buttonCandidates = [...uploadCandidates, ...genericButtons];
 
-    for (const candidate of uploadCandidates) {
-      try {
-        await candidate.waitFor({ state: "visible", timeout: 1500 });
-        const fileChooserPromise = page.waitForEvent("filechooser", { timeout: 4000 });
-        await candidate.click();
-        const chooser = await fileChooserPromise;
-        await chooser.setFiles(resolved);
-        return;
-      } catch {
-        // try next candidate
-      }
+  for (const candidate of buttonCandidates) {
+    try {
+      await candidate.waitFor({ state: "visible", timeout: 1200 });
+    } catch {
+      continue;
     }
 
-    fileInput = await firstVisible(dialog, FILE_INPUT_SELECTORS, 2000);
+    try {
+      try {
+        const fileChooserPromise = page.waitForEvent("filechooser", { timeout: 1500 });
+        await candidate.click({ force: true });
+        const chooser = await fileChooserPromise;
+        await chooser.setFiles(resolved);
+        return waitForImageAttachment(page, composerDialog, initialImageCount);
+      } catch {
+        await candidate.click({ force: true });
+      }
+
+      let fileInput = await firstAttached(composerDialog, FILE_INPUT_SELECTORS, 1000);
+      if (fileInput == null) {
+        fileInput = await firstAttached(page, FILE_INPUT_SELECTORS, 1000);
+      }
+      if (fileInput != null) {
+        return await setFilesAndConfirm(
+          page,
+          composerDialog,
+          fileInput,
+          resolved,
+          initialImageCount,
+        );
+      }
+    } catch {
+      try {
+        await page.keyboard.press("Escape");
+      } catch {
+        // ignore escape failures while probing upload controls
+      }
+    }
   }
 
-  if (fileInput == null) {
-    throw new Error("Could not locate file input for image upload");
+  const rawInputs = [
+    await firstAttached(composerDialog, FILE_INPUT_SELECTORS, 1000),
+    await firstAttached(page, FILE_INPUT_SELECTORS, 1000),
+  ].filter(Boolean);
+
+  for (const fileInput of rawInputs) {
+    try {
+      return await setFilesAndConfirm(
+        page,
+        composerDialog,
+        fileInput,
+        resolved,
+        initialImageCount,
+      );
+    } catch {
+      // try next raw input
+    }
   }
 
-  await fileInput.setInputFiles(resolved);
+  throw new Error("Could not upload image through any Facebook composer control");
 }
 
 async function clickPost(page) {
@@ -190,13 +308,52 @@ async function clickPost(page) {
     const fallback = page.getByRole("button", { name: /post|publish|פרסם|פרסום/i }).last();
     await fallback.waitFor({ state: "visible", timeout: 5000 });
     await fallback.click();
-    return;
+    return fallback;
   }
   await button.click();
+  return button;
 }
 
 async function waitForPreview(page) {
   await page.waitForTimeout(config.previewWaitMs);
+}
+
+async function findVisibleText(scope, patterns) {
+  for (const pattern of patterns) {
+    const locator = scope.getByText(pattern).first();
+    if (await isVisible(locator)) {
+      return pattern.source;
+    }
+  }
+  return null;
+}
+
+async function waitForPublishConfirmation(page, { dialog, postButton }) {
+  const deadline = Date.now() + PUBLISH_CONFIRM_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    const failureText = await findVisibleText(page, PUBLISH_FAILURE_PATTERNS);
+    if (failureText) {
+      throw new Error(`Facebook showed a publish failure message: ${failureText}`);
+    }
+
+    const successText = await findVisibleText(page, PUBLISH_SUCCESS_PATTERNS);
+    if (successText) {
+      return { confirmation: "success-message", details: successText };
+    }
+
+    if (dialog && !(await isVisible(dialog))) {
+      return { confirmation: "composer-closed" };
+    }
+
+    if (postButton && !(await isVisible(postButton))) {
+      return { confirmation: "post-button-hidden" };
+    }
+
+    await page.waitForTimeout(250);
+  }
+
+  throw new Error("Clicked Post but could not confirm that Facebook accepted the publish action");
 }
 
 async function assertSessionFile() {
@@ -236,6 +393,7 @@ export async function publishToFacebookGroup({
 
   const { browser, page } = await openAuthenticatedContext();
   const startedAt = Date.now();
+  let imageUpload = imagePath ? "pending" : "not-requested";
 
   try {
     logger.info({ groupUrl, dryRun }, "Opening Facebook group");
@@ -247,18 +405,40 @@ export async function publishToFacebookGroup({
     }
 
     const composer = await openComposer(page);
+    const publishDialog = page.locator('[role="dialog"]').first();
+    const dialogWasVisible = await isVisible(publishDialog);
     await composer.fill(text);
 
-    if (appendText && appendText.trim()) {
-      await waitForPreview(page);
-      await composer.press("End");
-      await page.waitForTimeout(300);
-      await composer.type(appendText, { delay: 15 });
+    if (imagePath) {
+      try {
+        const uploadResult = await uploadImage(page, imagePath, publishDialog);
+        imageUpload = "uploaded";
+        logger.info({ imagePath, uploadResult }, "Facebook image upload succeeded");
+      } catch (error) {
+        imageUpload = "failed";
+        const uploadErrorPath = path.join(
+          config.artifactsDir,
+          `facebook-upload-warning-${Date.now()}.png`
+        );
+        try {
+          await page.screenshot({ path: uploadErrorPath, fullPage: true });
+        } catch {
+          // ignore screenshot failure
+        }
+        logger.warn(
+          { err: error, imagePath, uploadErrorPath },
+          "Facebook image upload failed; continuing without image"
+        );
+      }
     }
 
-    if (imagePath) {
-      await uploadImage(page, imagePath);
-      await page.waitForTimeout(3000);
+    if (appendText && appendText.trim()) {
+      const activeComposer = page.locator('[role="dialog"] div[contenteditable="true"]').first();
+      await activeComposer.waitFor({ state: "visible", timeout: 4000 });
+      await waitForPreview(page);
+      await activeComposer.press("End");
+      await page.waitForTimeout(300);
+      await activeComposer.type(appendText, { delay: 15 });
     }
 
     await waitForPreview(page);
@@ -274,18 +454,24 @@ export async function publishToFacebookGroup({
       return {
         ok: true,
         mode: "dry-run",
+        imageUpload,
         screenshotPath,
         elapsedMs: Date.now() - startedAt,
       };
     }
 
-    await clickPost(page);
-    await page.waitForTimeout(5000);
+    const postButton = await clickPost(page);
+    const publishResult = await waitForPublishConfirmation(page, {
+      dialog: dialogWasVisible ? publishDialog : null,
+      postButton,
+    });
 
     return {
       ok: true,
       mode: "live",
+      imageUpload,
       screenshotPath,
+      publishConfirmation: publishResult,
       elapsedMs: Date.now() - startedAt,
     };
   } catch (error) {

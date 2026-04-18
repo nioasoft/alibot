@@ -21,11 +21,11 @@ class QualityGate:
     def __init__(
         self,
         manual_source_groups: list[str] | None = None,
-        min_score_external: int = 45,
-        min_score_hot_products: int = 60,
+        min_score_external: int = 70,
+        min_score_hot_products: int = 80,
         manual_priority: int = 1000,
         idle_destination_hours: int = 6,
-        idle_min_score: int = 20,
+        idle_min_score: int = 70,
         idle_priority_boost: int = 150,
     ) -> None:
         self._manual_sources = {

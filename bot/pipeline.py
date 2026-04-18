@@ -338,6 +338,9 @@ class Pipeline:
 
     def _has_idle_destination(self, destinations: list, hours: int) -> bool:
         threshold = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=hours)
+        if not destinations:
+            return False
+
         for destination in destinations:
             last_published = self._session.execute(
                 select(func.max(PublishQueueItem.published_at)).where(
@@ -346,9 +349,9 @@ class Pipeline:
                 )
             ).scalar_one()
             last_published = _as_utc(last_published)
-            if last_published is None or last_published < threshold:
-                return True
-        return False
+            if last_published is not None and last_published >= threshold:
+                return False
+        return True
 
     def _increment_stat(self, field: str) -> None:
         today = datetime.date.today()

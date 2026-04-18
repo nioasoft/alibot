@@ -1,56 +1,116 @@
 {% extends "base.html" %}
 {% block title %}AliBot — ראשי{% endblock %}
 {% block content %}
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-    <div class="bg-white rounded-lg shadow p-6">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <div class="text-sm text-gray-500">דילים שנראו היום</div>
         <div class="text-3xl font-bold">{{ stats.deals_seen }}</div>
     </div>
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <div class="text-sm text-gray-500">פורסמו היום</div>
         <div class="text-3xl font-bold text-green-600">{{ stats.deals_published }}</div>
     </div>
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <div class="text-sm text-gray-500">בתור לפרסום</div>
         <div class="text-3xl font-bold text-blue-600">{{ queue_count }}</div>
     </div>
 </div>
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <div class="text-sm text-gray-500">כפילויות שנדחו</div>
         <div class="text-2xl font-bold text-yellow-600">{{ stats.deals_skipped_dup }}</div>
     </div>
-    <div class="bg-white rounded-lg shadow p-6">
+    <div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-6">
         <div class="text-sm text-gray-500">שגיאות</div>
         <div class="text-2xl font-bold text-red-600">{{ stats.deals_skipped_error }}</div>
     </div>
 </div>
-<h2 class="text-lg font-semibold mb-4">דילים אחרונים</h2>
-<div class="bg-white rounded-lg shadow overflow-hidden">
-    <table class="w-full text-sm">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-4 py-3 text-right">מוצר</th>
-                <th class="px-4 py-3 text-right">מחיר</th>
-                <th class="px-4 py-3 text-right">קטגוריה</th>
-                <th class="px-4 py-3 text-right">סטטוס</th>
-                <th class="px-4 py-3 text-right">זמן</th>
-            </tr>
-        </thead>
-        <tbody class="divide-y">
-            {% for deal in recent_deals %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:50] }}</a></td>
-                <td class="px-4 py-3">{% if deal.price %}{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% else %}—{% endif %}</td>
-                <td class="px-4 py-3">{{ deal.category }}</td>
-                <td class="px-4 py-3">
-                    {% set summary = status_summary.get(deal.id, {"label": "—", "class_name": "text-gray-400"}) %}
-                    <span class="text-xs {{ summary.class_name }}">{{ summary.label }}</span>
-                </td>
-                <td class="px-4 py-3 text-gray-500">{{ deal.created_at | localtime }}</td>
-            </tr>
+
+<div class="grid grid-cols-1 xl:grid-cols-[1.8fr_1fr] gap-6 mb-8">
+    <section class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
+        <div class="border-b border-slate-200 px-6 py-4 flex items-center justify-between">
+            <div>
+                <h2 class="text-lg font-semibold">דילים אחרונים</h2>
+                <p class="text-sm text-slate-500">לכל דיל מוצגים יעדי ההפצה המדויקים והמצב שלהם.</p>
+            </div>
+            <a href="/deals" class="text-sm text-blue-600 hover:underline">לרשימת הדילים</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50 text-slate-600">
+                    <tr>
+                        <th class="px-4 py-3 text-right">מוצר</th>
+                        <th class="px-4 py-3 text-right">מחיר</th>
+                        <th class="px-4 py-3 text-right">קטגוריה</th>
+                        <th class="px-4 py-3 text-right">הפצה</th>
+                        <th class="px-4 py-3 text-right">נוצר</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for deal in recent_deals %}
+                    <tr class="align-top hover:bg-slate-50/80">
+                        <td class="px-4 py-4">
+                            <a href="/deals/{{ deal.id }}" class="font-medium text-blue-700 hover:underline">{{ deal.product_name[:60] }}</a>
+                            <div class="mt-1 text-xs text-slate-400">דיל #{{ deal.id }}</div>
+                        </td>
+                        <td class="px-4 py-4">{% if deal.price %}{{ "₪" if deal.currency == "ILS" else "$" }}{{ deal.price }}{% else %}—{% endif %}</td>
+                        <td class="px-4 py-4">{{ deal.category }}</td>
+                        <td class="px-4 py-4 min-w-[22rem]">
+                            {% set details = queue_details.get(deal.id, []) %}
+                            {% if details %}
+                                <div class="space-y-2">
+                                    {% for detail in details %}
+                                    <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ detail.platform_class }}">{{ detail.platform_label }}</span>
+                                            <span class="font-medium text-slate-800">{{ detail.destination_name }}</span>
+                                            <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ detail.status_class }}">{{ detail.status_label }}</span>
+                                        </div>
+                                        <div class="mt-1 text-xs text-slate-500">{{ detail.target_display }}</div>
+                                        <div class="mt-1 text-xs text-slate-400">
+                                            {% if detail.published_at %}
+                                            פורסם ב-{{ detail.published_at | localtime }}
+                                            {% else %}
+                                            מתוזמן ל-{{ detail.scheduled_after | localtime }}
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="text-xs text-slate-400">אין יעדים משויכים</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-4 text-slate-500">{{ deal.created_at | localdatetime }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="bg-slate-900 text-slate-50 rounded-2xl shadow-sm overflow-hidden">
+        <div class="border-b border-slate-800 px-6 py-4">
+            <h2 class="text-lg font-semibold">פרסומים אחרונים</h2>
+            <p class="text-sm text-slate-400">כאן רואים מתי דיל באמת סומן כפורסם ולאיזו מדיה.</p>
+        </div>
+        <div class="divide-y divide-slate-800">
+            {% for row in recent_publishes %}
+            <div class="px-6 py-4">
+                <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ row.queue_item.platform_class }}">{{ row.queue_item.platform_label }}</span>
+                    <span class="text-sm font-medium">{{ row.queue_item.destination_name }}</span>
+                    <span class="text-xs text-slate-400">{{ row.queue_item.published_at | localdatetime }}</span>
+                </div>
+                <div class="mt-2 text-sm text-slate-100">
+                    <a href="/deals/{{ row.deal.id }}" class="hover:underline">{{ row.deal.product_name[:60] }}</a>
+                </div>
+                <div class="mt-1 text-xs text-slate-400">{{ row.queue_item.target_display }}</div>
+            </div>
+            {% else %}
+            <div class="px-6 py-6 text-sm text-slate-400">עדיין אין פרסומים אחרונים להצגה.</div>
             {% endfor %}
-        </tbody>
-    </table>
+        </div>
+    </section>
 </div>
 {% endblock %}

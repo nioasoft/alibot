@@ -19,6 +19,7 @@ function parseBoolean(value, fallback = false) {
 export const config = {
   projectRoot,
   defaultGroupUrl: process.env.FB_GROUP_URL || "",
+  serverHost: process.env.FB_SERVER_HOST || "127.0.0.1",
   headless: parseBoolean(process.env.FB_HEADLESS, false),
   storageStatePath: path.resolve(projectRoot, process.env.FB_STORAGE_STATE || ".auth/facebook.json"),
   artifactsDir: path.resolve(projectRoot, process.env.FB_ARTIFACTS_DIR || "artifacts"),

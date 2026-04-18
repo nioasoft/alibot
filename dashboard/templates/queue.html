@@ -1,34 +1,46 @@
 {% extends "base.html" %}
 {% block title %}AliBot — תור פרסום{% endblock %}
 {% block content %}
-<h2 class="text-lg font-semibold mb-4">תור פרסום ({{ items | length }} דילים)</h2>
-<div class="bg-white rounded-lg shadow overflow-hidden">
+<div class="mb-4">
+    <h2 class="text-lg font-semibold">תור פרסום ({{ items | length }} דילים)</h2>
+    <p class="text-sm text-slate-500">כאן רואים בדיוק לאיזו מדיה ולאיזה יעד כל דיל ממתין להישלח.</p>
+</div>
+<div class="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
     <table class="w-full text-sm">
-        <thead class="bg-gray-50">
+        <thead class="bg-slate-50">
             <tr>
                 <th class="px-4 py-3 text-right">דיל</th>
                 <th class="px-4 py-3 text-right">מוצר</th>
-                <th class="px-4 py-3 text-right">פלטפורמה</th>
-                <th class="px-4 py-3 text-right">יעד</th>
+                <th class="px-4 py-3 text-right">מדיה ויעד</th>
                 <th class="px-4 py-3 text-right">עדיפות</th>
                 <th class="px-4 py-3 text-right">מתוזמן אחרי</th>
                 <th class="px-4 py-3 text-right">פעולות</th>
             </tr>
         </thead>
-        <tbody class="divide-y">
-            {% for qi, deal in items %}
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3 text-gray-400">#{{ deal.id }}</td>
-                <td class="px-4 py-3"><a href="/deals/{{ deal.id }}" class="text-blue-600 hover:underline">{{ deal.product_name[:40] }}</a></td>
-                <td class="px-4 py-3">{{ qi.platform }}</td>
-                <td class="px-4 py-3">{{ qi.target_ref }}</td>
-                <td class="px-4 py-3">{{ qi.priority }}</td>
-                <td class="px-4 py-3 text-gray-500">{{ qi.scheduled_after | localtime }}</td>
+        <tbody class="divide-y divide-slate-100">
+            {% for row in items %}
+            <tr class="align-top hover:bg-slate-50/80">
+                <td class="px-4 py-4 text-gray-400">#{{ row.deal.id }}</td>
+                <td class="px-4 py-4">
+                    <a href="/deals/{{ row.deal.id }}" class="text-blue-600 hover:underline">{{ row.deal.product_name[:52] }}</a>
+                    <div class="mt-1 text-xs text-slate-400">{{ row.deal.category }}</div>
+                </td>
+                <td class="px-4 py-4 min-w-[20rem]">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ row.queue_item.platform_class }}">{{ row.queue_item.platform_label }}</span>
+                        <span class="rounded-full px-2 py-0.5 text-xs font-medium {{ row.queue_item.queue_lane_class }}">{{ row.queue_item.queue_lane_label }}</span>
+                        <span class="font-medium text-slate-800">{{ row.queue_item.destination_name }}</span>
+                    </div>
+                    <div class="mt-1 text-xs text-slate-500">{{ row.queue_item.target_display }}</div>
+                    <div class="mt-1 text-xs text-slate-400">מפתח יעד: {{ row.queue_item.destination_key }}</div>
+                </td>
+                <td class="px-4 py-4">{{ row.queue_item.priority }}</td>
+                <td class="px-4 py-4 text-gray-500">{{ row.queue_item.scheduled_after | localdatetime }}</td>
                 <td class="px-4 py-3 flex gap-2">
-                    <form method="post" action="/queue/{{ qi.id }}/skip" class="inline">
+                    <form method="post" action="/queue/{{ row.queue_item.id }}/skip" class="inline">
                         <button type="submit" class="text-red-600 hover:underline text-xs">דלג</button>
                     </form>
-                    <form method="post" action="/queue/{{ qi.id }}/promote" class="inline">
+                    <form method="post" action="/queue/{{ row.queue_item.id }}/promote" class="inline">
                         <button type="submit" class="text-green-600 hover:underline text-xs">קדם</button>
                     </form>
                 </td>

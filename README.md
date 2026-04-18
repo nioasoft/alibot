@@ -139,12 +139,13 @@ PYTHONPATH=. python main.py       # Bot + Dashboard (port 8080)
 
 ### Services (launchd)
 
-שני services רשומים ב-launchd:
+שלושה services רשומים ב-launchd:
 
 | Service | מה הוא עושה | Log |
 |---------|-------------|-----|
 | `com.alibot.bot` | Python bot + Dashboard | `/tmp/alibot.log` |
 | `com.alibot.whatsapp` | Node.js Baileys service | `/tmp/wa_service.log` |
+| `com.alibot.facebook` | Node.js Playwright Facebook publisher | `/tmp/facebook_service.log` |
 
 ### פקודות שליטה (מרחוק דרך SSH)
 
@@ -158,20 +159,27 @@ launchctl list | grep alibot
 # עצירה
 launchctl stop com.alibot.bot
 launchctl stop com.alibot.whatsapp
+launchctl stop com.alibot.facebook
 
 # הפעלה
 launchctl start com.alibot.bot
 launchctl start com.alibot.whatsapp
+launchctl start com.alibot.facebook
 
 # Restart
 launchctl stop com.alibot.bot && launchctl start com.alibot.bot
+launchctl stop com.alibot.facebook && launchctl start com.alibot.facebook
 
 # לוגים חיים
 tail -f /tmp/alibot.log
 tail -f /tmp/wa_service.log
+tail -f /tmp/facebook_service.log
 
 # בדיקת WhatsApp health
 curl http://localhost:3001/health
+
+# בדיקת Facebook health
+curl http://127.0.0.1:3002/health
 ```
 
 ### עדכון קוד על המיני

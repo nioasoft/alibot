@@ -20,6 +20,8 @@ This website project can host the public deal tracker on the same Vercel app.
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `TRACKING_API_SECRET`
 - `TRACKING_BASE_URL`
+- `TRACKING_ADMIN_USERNAME`
+- `TRACKING_ADMIN_PASSWORD`
 
 ## Recommended Environment Variables
 
@@ -66,3 +68,4 @@ Example response:
 - Point `trk.dilim.net` to the same Vercel project as the landing page.
 - Set `TRACKING_BASE_URL=https://trk.dilim.net`.
 - Keep the public redirect path on the tracker hostname: `https://trk.dilim.net/go/<token>`.
+- The admin dashboard is available at `/admin` and is protected with HTTP Basic Auth using `TRACKING_ADMIN_USERNAME` and `TRACKING_ADMIN_PASSWORD`.

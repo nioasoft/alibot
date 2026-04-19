@@ -346,8 +346,12 @@ class DealPublisher:
                     skipped_item_ids.add(item.id)
                     continue
 
-                await self.publish_one(item, deal)
-                break
+                try:
+                    await self.publish_one(item, deal)
+                    break
+                except Exception:
+                    skipped_item_ids.add(item.id)
+                    continue
 
     def get_random_delay(self) -> int:
         return random.randint(self._min_delay, self._max_delay)

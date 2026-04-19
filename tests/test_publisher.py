@@ -433,3 +433,56 @@ class TestPublishExecution:
         assert slow_queued.status == "queued"
         assert tg_main.status == "published"
         publisher._telegram.send_deal.assert_awaited()
+
+    async def test_check_queue_continues_after_failed_facebook_publish(
+        self, publisher: DealPublisher, db_session
+    ):
+        fb_deal, fb_item = _seed_deal(
+            db_session,
+            deal_id=60,
+            platform="facebook",
+            target_ref="https://www.facebook.com/groups/deals20",
+        )
+        fb_item.destination_key = "fb_beer_sheva_together"
+        fb_item.priority = 95
+
+        _, tg_item = _seed_deal(
+            db_session,
+            deal_id=61,
+            platform="telegram",
+            target_ref="@main",
+        )
+        tg_item.destination_key = "tg_main"
+        tg_item.priority = 80
+        db_session.commit()
+        publisher.is_quiet_hour = MagicMock(return_value=False)
+        publisher._facebook.send_deal = AsyncMock(return_value=False)
+
+        with respx.mock:
+            respx.post("https://trk.dilim.net/api/tracking-links").mock(
+                side_effect=[
+                    httpx.Response(
+                        201,
+                        json={
+                            "token": "fb-fail-token",
+                            "trackedUrl": "https://trk.dilim.net/go/fb-fail-token",
+                            "reused": False,
+                        },
+                    ),
+                    httpx.Response(
+                        201,
+                        json={
+                            "token": "tg-recovery-token",
+                            "trackedUrl": "https://trk.dilim.net/go/tg-recovery-token",
+                            "reused": False,
+                        },
+                    ),
+                ]
+            )
+            await publisher.check_queue()
+
+        db_session.refresh(fb_item)
+        db_session.refresh(tg_item)
+        assert fb_item.status == "failed"
+        assert tg_item.status == "published"
+        publisher._telegram.send_deal.assert_awaited()

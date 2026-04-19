@@ -4,6 +4,7 @@ import path from "path";
 import pino from "pino";
 import { chromium } from "playwright";
 
+import { ensureFacebookLogin, hasStoredSession, saveStorageState } from "./auth.js";
 import { config } from "./config.js";
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
@@ -62,8 +63,6 @@ const ATTACHMENT_READY_SELECTORS = [
   '[aria-label*="מחק תמונה"]',
 ];
 
-const PUBLISH_CONFIRM_TIMEOUT_MS = Number(process.env.FB_PUBLISH_CONFIRM_TIMEOUT_MS || 15000);
-
 async function exists(filePath) {
   try {
     await fs.access(filePath);
@@ -112,10 +111,14 @@ async function isVisible(locator) {
 }
 
 async function openComposer(page) {
+  await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await page.waitForTimeout(800);
+
   const directTextTriggers = [
     page.getByText(/כאן כותבים/i).first(),
     page.getByText(/מה את חושבת|מה אתה חושב|על מה את חושבת|על מה אתה חושב/i).first(),
     page.getByText(/כתוב משהו|write something|create post/i).first(),
+    page.getByText(/כתבו משהו|שתפו משהו|מה חדש|יצירת פוסט/i).first(),
   ];
 
   for (const trigger of directTextTriggers) {
@@ -154,7 +157,7 @@ async function openComposer(page) {
 
   const triggerPatterns = [
     /כאן כותבים|מה את חושבת|מה אתה חושב|על מה את חושבת|על מה אתה חושב/i,
-    /כתוב משהו|write something|create post/i,
+    /כתוב משהו|כתבו משהו|write something|create post|share something|what's on your mind|what are you thinking/i,
   ];
 
   for (const pattern of triggerPatterns) {
@@ -181,7 +184,26 @@ async function openComposer(page) {
     }
   }
 
-  const textTrigger = page.getByText(/כאן כותבים|מה את חושבת|מה אתה חושב|על מה את חושבת|כתוב משהו|write something/i).first();
+  const genericComposerButtons = [
+    page.locator('div[role="button"][aria-label*="post"]').first(),
+    page.locator('div[role="button"][aria-label*="פרסם"]').first(),
+    page.locator('div[role="button"][aria-label*="כתוב"]').first(),
+    page.locator('div[role="button"][aria-label*="שתף"]').first(),
+  ];
+
+  for (const candidate of genericComposerButtons) {
+    try {
+      await candidate.waitFor({ state: "visible", timeout: 1500 });
+      await candidate.click();
+      const fallbackComposer = page.locator('div[role="textbox"][contenteditable="true"]').first();
+      await fallbackComposer.waitFor({ state: "visible", timeout: 3000 });
+      return fallbackComposer;
+    } catch {
+      // try next fallback
+    }
+  }
+
+  const textTrigger = page.getByText(/כאן כותבים|מה את חושבת|מה אתה חושב|על מה את חושבת|כתוב משהו|כתבו משהו|שתפו משהו|write something/i).first();
   try {
     await textTrigger.waitFor({ state: "visible", timeout: 3000 });
     await textTrigger.click();
@@ -318,6 +340,40 @@ async function waitForPreview(page) {
   await page.waitForTimeout(config.previewWaitMs);
 }
 
+async function ensureGroupPageReady(page, context, groupUrl) {
+  const authResult = await ensureFacebookLogin(page, context, { targetUrl: groupUrl });
+  logger.info({ authMode: authResult.mode, groupUrl }, "Opening Facebook group");
+
+  if (page.url() !== groupUrl) {
+    await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+  }
+
+  await page.waitForTimeout(3000);
+
+  if (page.url().includes("/login")) {
+    const retryAuth = await ensureFacebookLogin(page, context, { targetUrl: groupUrl });
+    logger.info(
+      { authMode: retryAuth.mode, groupUrl },
+      "Re-authenticated after Facebook redirected to login"
+    );
+    await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+    await page.waitForTimeout(3000);
+  }
+}
+
+async function openComposerWithRecovery(page, context, groupUrl) {
+  try {
+    return await openComposer(page);
+  } catch (error) {
+    logger.warn(
+      { err: error, groupUrl },
+      "Failed to open Facebook composer; refreshing auth and retrying the group page once"
+    );
+    await ensureGroupPageReady(page, context, groupUrl);
+    return openComposer(page);
+  }
+}
+
 async function findVisibleText(scope, patterns) {
   for (const pattern of patterns) {
     const locator = scope.getByText(pattern).first();
@@ -329,7 +385,7 @@ async function findVisibleText(scope, patterns) {
 }
 
 async function waitForPublishConfirmation(page, { dialog, postButton }) {
-  const deadline = Date.now() + PUBLISH_CONFIRM_TIMEOUT_MS;
+  const deadline = Date.now() + config.publishConfirmTimeoutMs;
 
   while (Date.now() < deadline) {
     const failureText = await findVisibleText(page, PUBLISH_FAILURE_PATTERNS);
@@ -356,21 +412,12 @@ async function waitForPublishConfirmation(page, { dialog, postButton }) {
   throw new Error("Clicked Post but could not confirm that Facebook accepted the publish action");
 }
 
-async function assertSessionFile() {
-  if (!(await exists(config.storageStatePath))) {
-    throw new Error(
-      `Missing Facebook auth state at ${config.storageStatePath}. Run 'npm run auth' in facebook/ first.`
-    );
-  }
-}
-
 export async function openAuthenticatedContext() {
-  await assertSessionFile();
   await ensureDir(config.artifactsDir);
 
   const browser = await chromium.launch({ headless: config.headless });
   const context = await browser.newContext({
-    storageState: config.storageStatePath,
+    ...(await hasStoredSession() ? { storageState: config.storageStatePath } : {}),
     viewport: { width: 1440, height: 1100 },
   });
   const page = await context.newPage();
@@ -391,20 +438,15 @@ export async function publishToFacebookGroup({
     throw new Error("text is required");
   }
 
-  const { browser, page } = await openAuthenticatedContext();
+  const { browser, context, page } = await openAuthenticatedContext();
   const startedAt = Date.now();
   let imageUpload = imagePath ? "pending" : "not-requested";
 
   try {
-    logger.info({ groupUrl, dryRun }, "Opening Facebook group");
-    await page.goto(groupUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
-    await page.waitForTimeout(3000);
+    await ensureGroupPageReady(page, context, groupUrl);
+    logger.info({ groupUrl, dryRun }, "Facebook group page ready for publishing");
 
-    if (page.url().includes("/login")) {
-      throw new Error("Facebook session is not authenticated");
-    }
-
-    const composer = await openComposer(page);
+    const composer = await openComposerWithRecovery(page, context, groupUrl);
     const publishDialog = page.locator('[role="dialog"]').first();
     const dialogWasVisible = await isVisible(publishDialog);
     await composer.fill(text);
@@ -450,6 +492,7 @@ export async function publishToFacebookGroup({
     await page.screenshot({ path: screenshotPath, fullPage: true });
 
     if (dryRun) {
+      await saveStorageState(context);
       logger.info({ screenshotPath }, "Dry run complete; not clicking Post");
       return {
         ok: true,
@@ -465,6 +508,7 @@ export async function publishToFacebookGroup({
       dialog: dialogWasVisible ? publishDialog : null,
       postButton,
     });
+    await saveStorageState(context);
 
     return {
       ok: true,

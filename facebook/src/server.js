@@ -1,7 +1,9 @@
 import fs from "fs/promises";
 
 import express from "express";
+import { chromium } from "playwright";
 
+import { ensureFacebookLogin } from "./auth.js";
 import { config } from "./config.js";
 import { publishToFacebookGroup } from "./facebookPoster.js";
 
@@ -59,6 +61,30 @@ app.post("/publish", async (req, res) => {
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     });
+  }
+});
+
+app.post("/refresh-auth", async (req, res) => {
+  const browser = await chromium.launch({ headless: false });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+  const page = await context.newPage();
+  const targetUrl = req.body.group_url || req.body.groupUrl || config.authTargetUrl;
+
+  try {
+    const result = await ensureFacebookLogin(page, context, { targetUrl });
+    res.json({
+      ok: true,
+      mode: result.mode,
+      targetUrl: result.targetUrl,
+      storageStatePath: config.storageStatePath,
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } finally {
+    await browser.close();
   }
 });
 

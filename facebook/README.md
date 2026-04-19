@@ -30,6 +30,29 @@ npm run auth
 
 This opens Chromium. Log into Facebook manually, open the target group to confirm access, then return to the terminal and press Enter. The session is saved to `.auth/facebook.json`.
 
+If you keep Facebook credentials in env vars, the auth flow can also log in automatically.
+Supported names:
+
+```bash
+FB_LOGIN_EMAIL=...
+FB_LOGIN_PASSWORD=...
+```
+
+For compatibility with the main repo `.env`, the service also accepts:
+
+```bash
+USERNAME=...
+PASSWORD=...
+```
+
+If Facebook should always re-authenticate against a specific group or deals page, set:
+
+```bash
+FB_AUTH_TARGET_URL=https://www.facebook.com/groups/your-group-or-deals-url
+```
+
+That makes both `npm run auth` and `POST /refresh-auth` land on the exact page that publishing uses, instead of only logging into the generic Facebook home page.
+
 ## Test Post
 
 ```bash
@@ -51,6 +74,7 @@ Endpoints:
 
 - `GET /health`
 - `POST /publish`
+- `POST /refresh-auth`
 
 Example payload:
 
@@ -62,6 +86,8 @@ Example payload:
   "dry_run": true
 }
 ```
+
+`POST /refresh-auth` also accepts `group_url`, so you can refresh the saved session directly against the exact group/deals page that should be used for publishing.
 
 ## Notes
 

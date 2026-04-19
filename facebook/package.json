@@ -7,7 +7,7 @@
     "auth": "node src/login.js",
     "start": "node src/server.js",
     "post:test": "node src/cli.js",
-    "check": "node --check src/cli.js && node --check src/config.js && node --check src/facebookPoster.js && node --check src/login.js && node --check src/server.js"
+    "check": "node --check src/auth.js && node --check src/cli.js && node --check src/config.js && node --check src/facebookPoster.js && node --check src/login.js && node --check src/server.js"
   },
   "dependencies": {
     "dotenv": "^16.4.7",

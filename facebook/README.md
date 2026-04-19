@@ -53,6 +53,14 @@ FB_AUTH_TARGET_URL=https://www.facebook.com/groups/your-group-or-deals-url
 
 That makes both `npm run auth` and `POST /refresh-auth` land on the exact page that publishing uses, instead of only logging into the generic Facebook home page.
 
+If the group should publish as a Facebook Page instead of the user profile, set:
+
+```bash
+FB_POST_AS_PAGE_NAME=Your Page Name
+```
+
+When this is configured, the publisher will try to switch identity inside the composer. If the page cannot be selected, the publish attempt fails instead of posting from the personal profile by mistake.
+
 ## Test Post
 
 ```bash

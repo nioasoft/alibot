@@ -110,6 +110,10 @@ async function isVisible(locator) {
   }
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function openComposer(page) {
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.waitForTimeout(800);
@@ -340,6 +344,85 @@ async function waitForPreview(page) {
   await page.waitForTimeout(config.previewWaitMs);
 }
 
+async function selectIdentityCandidate(pageNamePattern, candidates) {
+  for (const candidate of candidates) {
+    try {
+      await candidate.waitFor({ state: "visible", timeout: 1500 });
+      await candidate.click({ force: true });
+      return true;
+    } catch {
+      // try next candidate
+    }
+  }
+
+  const directOption = page.getByText(pageNamePattern).first();
+  if (await isVisible(directOption)) {
+    await directOption.click({ force: true });
+    return true;
+  }
+
+  return false;
+}
+
+async function ensurePostingIdentity(page, dialog) {
+  const pageName = config.postAsPageName?.trim();
+  if (!pageName) {
+    return { mode: "profile-default" };
+  }
+
+  const pageNamePattern = new RegExp(escapeRegExp(pageName), "i");
+  const selectedIdentity = dialog.getByText(pageNamePattern).first();
+  if (await isVisible(selectedIdentity)) {
+    return { mode: "page-already-selected", pageName };
+  }
+
+  const identitySwitchers = [
+    dialog.getByRole("button", { name: /switch profile|switch identity|post as|choose identity|בחר|זהות|פרופיל|page|דף/i }).first(),
+    dialog.locator('[role="button"][aria-haspopup="menu"]').first(),
+    dialog.locator('[role="button"][aria-label*="switch"]').first(),
+    dialog.locator('[role="button"][aria-label*="profile"]').first(),
+    dialog.locator('[role="button"][aria-label*="identity"]').first(),
+    dialog.locator('[role="button"][aria-label*="דף"]').first(),
+    dialog.locator('[role="button"][aria-label*="פרופיל"]').first(),
+    dialog.locator('[role="button"]').filter({ has: dialog.getByText(/private group|public group|קבוצה פרטית|קבוצה ציבורית/i).first() }).first(),
+  ];
+
+  const opened = await selectIdentityCandidate(pageNamePattern, identitySwitchers);
+  if (!opened) {
+    throw new Error(`Configured Facebook page '${pageName}' was not selectable from the composer`);
+  }
+
+  const pageOptions = [
+    page.getByRole("menuitem", { name: pageNamePattern }).first(),
+    page.getByRole("button", { name: pageNamePattern }).first(),
+    page.getByText(pageNamePattern).first(),
+  ];
+
+  let selected = false;
+  for (const option of pageOptions) {
+    try {
+      await option.waitFor({ state: "visible", timeout: 3000 });
+      await option.click({ force: true });
+      selected = true;
+      break;
+    } catch {
+      // try next option
+    }
+  }
+
+  if (!selected) {
+    throw new Error(`Facebook page option '${pageName}' did not appear after opening the identity switcher`);
+  }
+
+  await page.waitForTimeout(1500);
+  const selectedAfterSwitch = dialog.getByText(pageNamePattern).first();
+  if (!(await isVisible(selectedAfterSwitch))) {
+    throw new Error(`Facebook composer did not confirm page identity '${pageName}' after selection`);
+  }
+
+  return { mode: "page-selected", pageName };
+}
+
 async function ensureGroupPageReady(page, context, groupUrl) {
   const authResult = await ensureFacebookLogin(page, context, { targetUrl: groupUrl });
   logger.info({ authMode: authResult.mode, groupUrl }, "Opening Facebook group");
@@ -449,6 +532,8 @@ export async function publishToFacebookGroup({
     const composer = await openComposerWithRecovery(page, context, groupUrl);
     const publishDialog = page.locator('[role="dialog"]').first();
     const dialogWasVisible = await isVisible(publishDialog);
+    const identityResult = await ensurePostingIdentity(page, dialogWasVisible ? publishDialog : page);
+    logger.info({ groupUrl, identityMode: identityResult.mode, pageName: identityResult.pageName || null }, "Facebook publishing identity ready");
     await composer.fill(text);
 
     if (imagePath) {

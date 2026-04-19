@@ -31,6 +31,7 @@ export const config = {
   previewWaitMs: Number(process.env.FB_PREVIEW_WAIT_MS || 5000),
   loginTimeoutMs: Number(process.env.FB_LOGIN_TIMEOUT_MS || 30000),
   publishConfirmTimeoutMs: Number(process.env.FB_PUBLISH_CONFIRM_TIMEOUT_MS || 15000),
+  postAsPageName: process.env.FB_POST_AS_PAGE_NAME || "",
   loginEmail:
     process.env.FB_LOGIN_EMAIL ||
     process.env.FB_EMAIL ||

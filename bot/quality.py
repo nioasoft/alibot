@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bot.aliexpress_client import select_best_sale_price
+from bot.source_intelligence import SourceReputation
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,9 @@ class QualityGate:
         idle_destination_hours: int = 6,
         idle_min_score: int = 70,
         idle_priority_boost: int = 150,
+        source_reputation_enabled: bool = True,
+        source_reputation_boost_max: int = 12,
+        source_reputation_penalty_max: int = 18,
     ) -> None:
         self._manual_sources = {
             self._normalize_source(group)
@@ -39,6 +43,13 @@ class QualityGate:
         self.idle_destination_hours = idle_destination_hours
         self.idle_min_score = idle_min_score
         self.idle_priority_boost = idle_priority_boost
+        self._source_reputation_enabled = source_reputation_enabled
+        self._source_reputation_boost_max = source_reputation_boost_max
+        self._source_reputation_penalty_max = source_reputation_penalty_max
+        self._source_reputations: dict[str, SourceReputation] = {}
+
+    def set_source_reputations(self, reputations: dict[str, SourceReputation]) -> None:
+        self._source_reputations = dict(reputations)
 
     def evaluate_pipeline(
         self,
@@ -71,8 +82,10 @@ class QualityGate:
             affiliate_link_ready=affiliate_link_ready,
             missing_details=ali_details is None,
         )
+        source_adjustment = self._source_adjustment(source_group)
+        score = max(0, min(100, score + source_adjustment))
         accepted = score >= self._min_score_external
-        reason = "quality_pass" if accepted else "quality_below_threshold"
+        reason = self._decision_reason(accepted, source_adjustment)
         priority = score
 
         if not accepted and idle_override and score >= self.idle_min_score:
@@ -152,6 +165,38 @@ class QualityGate:
             score -= 25
 
         return max(0, min(100, score))
+
+    def _source_adjustment(self, source_group: str | None) -> int:
+        if not self._source_reputation_enabled:
+            return 0
+
+        normalized = self._normalize_source(source_group)
+        if not normalized:
+            return 0
+
+        reputation = self._source_reputations.get(normalized)
+        if reputation is None:
+            return 0
+
+        if reputation.score >= 50:
+            ratio = (reputation.score - 50) / 50
+            return round(ratio * self._source_reputation_boost_max)
+
+        ratio = (50 - reputation.score) / 50
+        return -round(ratio * self._source_reputation_penalty_max)
+
+    @staticmethod
+    def _decision_reason(accepted: bool, source_adjustment: int) -> str:
+        if accepted:
+            if source_adjustment > 0:
+                return "quality_pass_source_boost"
+            if source_adjustment < 0:
+                return "quality_pass_source_penalty"
+            return "quality_pass"
+
+        if source_adjustment < 0:
+            return "quality_below_threshold_source_penalty"
+        return "quality_below_threshold"
 
     @staticmethod
     def _score_orders(orders: int | None) -> int:

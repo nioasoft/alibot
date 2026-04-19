@@ -37,6 +37,7 @@ from bot.quality import QualityGate
 from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
 from bot.router import DestinationRouter
+from bot.source_intelligence import SourceIntelligence
 from bot.telegram_publisher import TelegramPublisher
 from bot.supabase_publisher import SupabasePublisher
 from bot.web_publisher import WebPublisher
@@ -146,7 +147,19 @@ async def main():
         idle_destination_hours=config.quality.idle_destination_hours,
         idle_min_score=config.quality.idle_min_score,
         idle_priority_boost=config.quality.idle_priority_boost,
+        source_reputation_enabled=config.quality.source_reputation_enabled,
+        source_reputation_boost_max=config.quality.source_reputation_boost_max,
+        source_reputation_penalty_max=config.quality.source_reputation_penalty_max,
     )
+    source_intelligence = None
+    if config.supabase and config.quality.source_reputation_enabled:
+        source_intelligence = SourceIntelligence(
+            url=config.supabase.url,
+            key=config.supabase.service_key,
+            max_rows=config.quality.source_reputation_max_rows,
+            min_links=config.quality.source_reputation_min_links,
+        )
+        quality_gate.set_source_reputations(source_intelligence.refresh())
 
     catalog_client, affiliate_pool, affiliate_clients = _build_aliexpress_clients(config)
 
@@ -258,6 +271,12 @@ async def main():
         IntervalTrigger(hours=config.publishing.hot_products_interval_hours),
         id="hot_products",
     )
+    if source_intelligence is not None:
+        scheduler.add_job(
+            lambda: quality_gate.set_source_reputations(source_intelligence.refresh()),
+            IntervalTrigger(minutes=config.quality.source_reputation_refresh_minutes),
+            id="source_intelligence_refresh",
+        )
     if hasattr(web_publisher, "cleanup_old_images"):
         scheduler.add_job(
             web_publisher.cleanup_old_images,

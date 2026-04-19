@@ -160,6 +160,12 @@ quality:
   idle_destination_hours: 6
   idle_min_score: 70
   idle_priority_boost: 150
+  source_reputation_enabled: true
+  source_reputation_refresh_minutes: 60
+  source_reputation_min_links: 3
+  source_reputation_max_rows: 5000
+  source_reputation_boost_max: 12
+  source_reputation_penalty_max: 18
 
 dashboard:
   port: 8080

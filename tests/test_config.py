@@ -85,6 +85,12 @@ marketing:
     assert config.quality.min_score_hot_products == 80
     assert config.quality.idle_min_score == 70
     assert config.quality.idle_priority_boost == 150
+    assert config.quality.source_reputation_enabled is True
+    assert config.quality.source_reputation_refresh_minutes == 60
+    assert config.quality.source_reputation_min_links == 3
+    assert config.quality.source_reputation_max_rows == 5000
+    assert config.quality.source_reputation_boost_max == 12
+    assert config.quality.source_reputation_penalty_max == 18
     assert config.facebook.service_url == "http://localhost:3002"
 
 
@@ -175,6 +181,12 @@ quality:
   idle_destination_hours: 8
   idle_min_score: 25
   idle_priority_boost: 222
+  source_reputation_enabled: true
+  source_reputation_refresh_minutes: 90
+  source_reputation_min_links: 5
+  source_reputation_max_rows: 2000
+  source_reputation_boost_max: 9
+  source_reputation_penalty_max: 14
 """)
     from bot.config import load_config
 
@@ -212,6 +224,12 @@ quality:
     assert config.quality.idle_destination_hours == 8
     assert config.quality.idle_min_score == 25
     assert config.quality.idle_priority_boost == 222
+    assert config.quality.source_reputation_enabled is True
+    assert config.quality.source_reputation_refresh_minutes == 90
+    assert config.quality.source_reputation_min_links == 5
+    assert config.quality.source_reputation_max_rows == 2000
+    assert config.quality.source_reputation_boost_max == 9
+    assert config.quality.source_reputation_penalty_max == 14
     assert config.facebook.landing_page_url == ""
 
 

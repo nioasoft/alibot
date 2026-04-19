@@ -113,6 +113,12 @@ class QualityConfig:
     idle_destination_hours: int
     idle_min_score: int
     idle_priority_boost: int
+    source_reputation_enabled: bool
+    source_reputation_refresh_minutes: int
+    source_reputation_min_links: int
+    source_reputation_max_rows: int
+    source_reputation_boost_max: int
+    source_reputation_penalty_max: int
 
 
 @dataclass(frozen=True)
@@ -415,6 +421,24 @@ def load_config(config_path: str) -> AppConfig:
             idle_destination_hours=int(raw.get("quality", {}).get("idle_destination_hours", 6)),
             idle_min_score=int(raw.get("quality", {}).get("idle_min_score", 70)),
             idle_priority_boost=int(raw.get("quality", {}).get("idle_priority_boost", 150)),
+            source_reputation_enabled=bool(
+                raw.get("quality", {}).get("source_reputation_enabled", True)
+            ),
+            source_reputation_refresh_minutes=max(
+                15, int(raw.get("quality", {}).get("source_reputation_refresh_minutes", 60))
+            ),
+            source_reputation_min_links=max(
+                1, int(raw.get("quality", {}).get("source_reputation_min_links", 3))
+            ),
+            source_reputation_max_rows=max(
+                100, int(raw.get("quality", {}).get("source_reputation_max_rows", 5000))
+            ),
+            source_reputation_boost_max=max(
+                0, int(raw.get("quality", {}).get("source_reputation_boost_max", 12))
+            ),
+            source_reputation_penalty_max=max(
+                0, int(raw.get("quality", {}).get("source_reputation_penalty_max", 18))
+            ),
         ),
         dashboard=DashboardConfig(
             port=raw["dashboard"]["port"],

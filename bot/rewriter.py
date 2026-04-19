@@ -16,6 +16,9 @@ from bot.openai_runtime import install_openai_platform_override
 _SYSTEM_PROMPT = """אתה כותב תוכן לערוץ דילים בטלגרם. אתה מקבל מידע על דיל ומחזיר JSON.
 
 כללים לשכתוב:
+- שם המוצר והנתונים המובנים הם מקור האמת היחיד
+- הטקסט המקורי עלול להיות שגוי, ממוחזר, או שייך למוצר אחר
+- אם יש סתירה בין שם המוצר/הנתונים לבין הטקסט המקורי, חובה להתעלם מהטקסט המקורי
 - שנה את הניסוח לגמרי (אסור להעתיק מהמקור)
 - שמור על כל המידע החשוב: מוצר, מחיר, משלוח
 - הוסף אימוג'ים מתאימים
@@ -25,6 +28,7 @@ _SYSTEM_PROMPT = """אתה כותב תוכן לערוץ דילים בטלגרם.
 - כתוב בעברית בלבד
 - אל תכלול לינקים בטקסט! הלינק לרכישה מופיע מתחת להודעה
 - אל תכתוב מספרי מחיר, סימני מטבע, או המרות לשקלים. שורת המחיר תתווסף אוטומטית מחוץ לטקסט.
+- אסור להמציא תכונות, הספקים, נפחים, מידות, תאימות או מפרט שלא מופיעים בשם המוצר או בנתונים שקיבלת
 
 לקיטלוג, בחר קטגוריה אחת מ:
 tech, home, fashion, beauty, toys, sports, auto, other
@@ -154,7 +158,11 @@ class ContentRewriter:
         usd_ils_rate: Optional[float] = None,
         user_notes: Optional[str] = None,
     ) -> str:
-        parts = [f"מוצר: {product_name}"]
+        parts = [
+            "הוראת אמינות: שם המוצר והנתונים שלמטה הם מקור האמת. "
+            "הטקסט המקורי, אם קיים, עלול להיות שגוי או שייך למוצר אחר."
+        ]
+        parts.append(f"מוצר: {product_name}")
         if price and currency:
             symbol = "₪" if currency == "ILS" else "$"
             parts.append(f"מחיר: {symbol}{price}")
@@ -169,7 +177,12 @@ class ContentRewriter:
             parts.append(f"מכירות: {sales_count}")
         if user_notes:
             parts.append(f"\nדגשים או הוראות מהמשתמש:\n{user_notes}")
-        parts.append(f"\nטקסט מקורי:\n{original_text}")
+        if original_text and original_text.strip():
+            parts.append(
+                "\nטקסט מקורי לא מהימן "
+                "(השתמש בו רק אם הוא תואם לשם המוצר ולנתונים למעלה):\n"
+                f"{original_text}"
+            )
         return "\n".join(parts)
 
     def finalize_text(

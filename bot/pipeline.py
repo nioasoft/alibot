@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 from sqlalchemy import func, select
@@ -78,6 +78,19 @@ class Pipeline:
         self._ali_client = aliexpress_client
         self._affiliate_pool = affiliate_pool
         self._quality_gate = quality_gate
+
+    @staticmethod
+    def _rewrite_source_context(
+        *,
+        original_text: str,
+        ali_details: Any | None,
+    ) -> str:
+        # When we have live AliExpress details, upstream group copy is too noisy to trust.
+        # It is often recycled across different products and causes the rewriter to describe
+        # the wrong item even though the product title/link are correct.
+        if ali_details is not None:
+            return ""
+        return original_text
 
     async def process(
         self,
@@ -245,13 +258,18 @@ class Pipeline:
         elif parsed.price:
             rewrite_price = parsed.price
 
+        rewrite_source_text = self._rewrite_source_context(
+            original_text=text,
+            ali_details=ali_details,
+        )
+
         rewrite_result = await self._rewriter.rewrite(
             product_name=ali_details.title if ali_details else parsed.raw_text[:100],
             price=rewrite_price,
             currency=rewrite_currency,
             shipping=parsed.shipping,
-            original_text=text,
-            user_notes=parsed.user_notes,
+            original_text=rewrite_source_text,
+            user_notes=parsed.user_notes if not ali_details else None,
             rating=ali_details.rating if ali_details else None,
             sales_count=ali_details.orders_count if ali_details else None,
             usd_ils_rate=get_cached_rate(),

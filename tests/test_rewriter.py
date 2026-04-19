@@ -127,3 +127,18 @@ class TestContentRewriter:
         assert "🚚 משלוח חינם · משלוח מהיר" in text
         assert "🎟️ קוד הנחה: SAVE7 - On order over USD 10, get USD 7 off" in text
         assert "🎟️ קוד הנחה: ILAPR2, DSB2" in text
+
+    async def test_build_user_prompt_marks_original_text_as_untrusted(self, rewriter: ContentRewriter):
+        prompt = rewriter._build_user_prompt(
+            product_name="Xiaomi 67W USB Super Fast Charger",
+            price=1.5,
+            currency="USD",
+            shipping=None,
+            rating=4.8,
+            sales_count=120,
+            original_text="מטען נייד 20,000mAh עם מסך מראה",
+        )
+
+        assert "מקור האמת" in prompt
+        assert "טקסט מקורי לא מהימן" in prompt
+        assert "Xiaomi 67W USB Super Fast Charger" in prompt

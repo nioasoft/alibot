@@ -321,3 +321,41 @@ class TestPipeline:
         assert "🎟️ קוד הנחה: SAVE7 - On order over USD 10, get USD 7 off" in deal.rewritten_text
         assert "🎟️ קוד הנחה: ILAPR2, DSB2" in deal.rewritten_text
         assert "🚚 משלוח מהיר" in deal.rewritten_text
+
+    async def test_pipeline_ignores_upstream_copy_when_api_details_exist(
+        self, pipeline_deps, db_session
+    ):
+        ali_client = MagicMock()
+        ali_client.is_enabled = True
+        ali_client.get_product_details.return_value = ProductDetails(
+            title="Xiaomi 67W USB Super Fast Charger",
+            price=3.0,
+            sale_price=1.5,
+            app_sale_price=None,
+            currency="USD",
+            images=[],
+            rating=4.8,
+            orders_count=120,
+            commission_rate=8.0,
+            category="Consumer Electronics",
+            promo_codes=[],
+        )
+
+        fresh_pipeline = Pipeline(**pipeline_deps, aliexpress_client=ali_client)
+        raw_text = (
+            "🔋 מטען נייד 20,000mAh עם מסך מראה – קטן בגודל, ענק בביצועים! ⚡\n"
+            "אם אתם מחפשים פתרון מהיר ויעיל לשמור על המכשירים שלכם טעונים בכל מצב...\n"
+            "https://www.aliexpress.com/item/1005006275089231.html"
+        )
+
+        await fresh_pipeline.process(
+            text=raw_text,
+            images=[],
+            source_group="@IsraelSmartBuy",
+            telegram_message_id=104,
+        )
+
+        rewrite_call = pipeline_deps["rewriter"].rewrite.await_args
+        assert rewrite_call.kwargs["product_name"] == "Xiaomi 67W USB Super Fast Charger"
+        assert rewrite_call.kwargs["original_text"] == ""
+        assert rewrite_call.kwargs["user_notes"] is None

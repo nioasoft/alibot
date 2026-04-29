@@ -115,6 +115,31 @@ export function getClickContext(request: NextRequest) {
   };
 }
 
+const PREVIEW_CRAWLER_PATTERNS = [
+  /facebookexternalhit/i,
+  /meta-externalagent/i,
+  /meta-externalfetcher/i,
+  /facebot/i,
+  /twitterbot/i,
+  /slackbot/i,
+  /linkedinbot/i,
+  /telegrambot/i,
+  /discordbot/i,
+  /googlebot/i,
+  /bingbot/i,
+  /crawler/i,
+  /spider/i,
+];
+
+export function isPreviewCrawler(userAgent: string | null): boolean {
+  const normalized = normalizeText(userAgent, 1000);
+  if (!normalized) {
+    return false;
+  }
+
+  return PREVIEW_CRAWLER_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function hasValidTrackingSecret(request: NextRequest): boolean {
   const expected = process.env.TRACKING_API_SECRET;
   if (!expected) {

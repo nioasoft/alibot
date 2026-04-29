@@ -10,8 +10,9 @@ This website project can host the public deal tracker on the same Vercel app.
   - Creates or reuses a token by `idempotencyKey`.
 - `GET /go/[token]`
   - Public redirect endpoint.
-  - Records the click in Supabase.
-  - Returns `302` to the stored AliExpress URL.
+  - Records only human-like clicks in Supabase.
+  - Preview crawlers get a non-redirect Open Graph landing page.
+  - Human browsers get a lightweight landing page that continues to the stored AliExpress URL.
 
 ## Required Environment Variables
 

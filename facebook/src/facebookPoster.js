@@ -63,6 +63,8 @@ const ATTACHMENT_READY_SELECTORS = [
   '[aria-label*="מחק תמונה"]',
 ];
 
+const COMMENT_BUTTON_PATTERNS = /comment|leave a comment|write a comment|תגובה|הגב|כתיבת תגובה/i;
+
 async function exists(filePath) {
   try {
     await fs.access(filePath);
@@ -102,6 +104,18 @@ async function firstAttached(scope, selectors, timeout = 3000) {
   return null;
 }
 
+async function firstVisibleLocator(candidates, timeout = 3000) {
+  for (const candidate of candidates) {
+    try {
+      await candidate.waitFor({ state: "visible", timeout });
+      return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
+}
+
 async function isVisible(locator) {
   try {
     return await locator.isVisible();
@@ -112,6 +126,34 @@ async function isVisible(locator) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compactWhitespace(value) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function snippetFromText(value, maxLength = 80) {
+  const compact = compactWhitespace(value);
+  if (!compact) {
+    return "";
+  }
+  return compact.slice(0, maxLength).trim();
+}
+
+function preferredSnippet(value, maxLength = 80) {
+  const firstNonEmptyLine = value
+    .split("\n")
+    .map((line) => compactWhitespace(line))
+    .find((line) => line.length >= 12);
+  return snippetFromText(firstNonEmptyLine || value, maxLength);
+}
+
+async function locatorText(locator) {
+  try {
+    return compactWhitespace(await locator.innerText());
+  } catch {
+    return compactWhitespace((await locator.textContent()) || "");
+  }
 }
 
 async function openComposer(page) {
@@ -244,7 +286,68 @@ async function setFilesAndConfirm(page, dialog, locator, resolved, initialImageC
   return waitForImageAttachment(page, dialog, initialImageCount);
 }
 
-async function uploadImage(page, imagePath, dialog) {
+async function firstUsableUploadScope(composer, dialog) {
+  const scopeCandidates = [
+    dialog,
+    composer.locator("xpath=ancestor::*[@role='dialog'][1]"),
+    composer.locator("xpath=ancestor::form[1]"),
+    composer.locator("xpath=ancestor::*[@role='article'][1]"),
+    composer.locator("xpath=ancestor::div[.//div[@contenteditable='true']][1]"),
+  ].filter(Boolean);
+
+  for (const scope of scopeCandidates) {
+    try {
+      await scope.waitFor({ state: "visible", timeout: 1200 });
+      const composerCount = await scope.locator('div[contenteditable="true"]').count();
+      if (composerCount > 0) {
+        return scope;
+      }
+    } catch {
+      // try next scope
+    }
+  }
+
+  throw new Error("Could not determine a safe Facebook composer scope for image upload");
+}
+
+async function bottomComposerIconButtons(scope) {
+  const candidates = scope.locator('div[role="button"], button');
+  const count = await candidates.count();
+  const bottomButtons = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const locator = candidates.nth(index);
+    try {
+      if (!(await locator.isVisible())) {
+        continue;
+      }
+    } catch {
+      continue;
+    }
+
+    const box = await locator.boundingBox();
+    if (!box) {
+      continue;
+    }
+
+    if (box.y < 450 || box.width > 120 || box.height > 120) {
+      continue;
+    }
+
+    const svgCount = await locator.locator("svg").count();
+    if (svgCount === 0) {
+      continue;
+    }
+
+    bottomButtons.push({ locator, x: box.x, y: box.y });
+  }
+
+  return bottomButtons
+    .sort((a, b) => b.y - a.y || a.x - b.x)
+    .map((entry) => entry.locator);
+}
+
+async function uploadImage(page, imagePath, composer, dialog) {
   if (!imagePath) {
     return;
   }
@@ -254,17 +357,31 @@ async function uploadImage(page, imagePath, dialog) {
     throw new Error(`Image file not found: ${resolved}`);
   }
 
-  const composerDialog = dialog ?? page.locator('[role="dialog"]').first();
-  const initialImageCount = await composerDialog.locator("img").count();
+  const uploadScope = await firstUsableUploadScope(composer, dialog);
+  const initialImageCount = await uploadScope.locator("img").count();
+  let directFileInput = await firstAttached(uploadScope, FILE_INPUT_SELECTORS, 1200);
+  if (directFileInput != null) {
+    return setFilesAndConfirm(
+      page,
+      uploadScope,
+      directFileInput,
+      resolved,
+      initialImageCount,
+    );
+  }
+
   const uploadCandidates = [
-    composerDialog.getByRole("button", { name: /photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i }).first(),
-    composerDialog.getByText(/photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i).first(),
-    composerDialog.locator('[aria-label*="photo"], [aria-label*="image"], [aria-label*="video"], [aria-label*="תמונה"], [aria-label*="וידאו"]').first(),
-    composerDialog.locator('div[role="button"]').nth(3),
+    uploadScope.getByRole("button", { name: /photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i }).first(),
+    uploadScope.getByText(/photo|image|video|photo\/video|תמונה|תמונות|וידאו|סרטון/i).first(),
+    uploadScope.locator('[aria-label*="photo"], [aria-label*="image"], [aria-label*="video"], [aria-label*="תמונה"], [aria-label*="וידאו"]').first(),
   ];
 
-  const genericButtons = (await composerDialog.locator('div[role="button"]').all()).slice(-12);
-  const buttonCandidates = [...uploadCandidates, ...genericButtons];
+  const iconButtons = await bottomComposerIconButtons(uploadScope);
+  const buttonCandidates = [...uploadCandidates, ...iconButtons];
+  logger.info(
+    { imagePath: resolved, candidateCount: buttonCandidates.length },
+    "Trying Facebook image upload controls within composer scope"
+  );
 
   for (const candidate of buttonCandidates) {
     try {
@@ -275,23 +392,20 @@ async function uploadImage(page, imagePath, dialog) {
 
     try {
       try {
-        const fileChooserPromise = page.waitForEvent("filechooser", { timeout: 1500 });
+        const fileChooserPromise = page.waitForEvent("filechooser", { timeout: 3500 });
         await candidate.click({ force: true });
         const chooser = await fileChooserPromise;
         await chooser.setFiles(resolved);
-        return waitForImageAttachment(page, composerDialog, initialImageCount);
+        return waitForImageAttachment(page, uploadScope, initialImageCount);
       } catch {
         await candidate.click({ force: true });
       }
 
-      let fileInput = await firstAttached(composerDialog, FILE_INPUT_SELECTORS, 1000);
-      if (fileInput == null) {
-        fileInput = await firstAttached(page, FILE_INPUT_SELECTORS, 1000);
-      }
+      let fileInput = await firstAttached(uploadScope, FILE_INPUT_SELECTORS, 2500);
       if (fileInput != null) {
         return await setFilesAndConfirm(
           page,
-          composerDialog,
+          uploadScope,
           fileInput,
           resolved,
           initialImageCount,
@@ -306,23 +420,15 @@ async function uploadImage(page, imagePath, dialog) {
     }
   }
 
-  const rawInputs = [
-    await firstAttached(composerDialog, FILE_INPUT_SELECTORS, 1000),
-    await firstAttached(page, FILE_INPUT_SELECTORS, 1000),
-  ].filter(Boolean);
-
-  for (const fileInput of rawInputs) {
-    try {
-      return await setFilesAndConfirm(
-        page,
-        composerDialog,
-        fileInput,
-        resolved,
-        initialImageCount,
-      );
-    } catch {
-      // try next raw input
-    }
+  directFileInput = await firstAttached(uploadScope, FILE_INPUT_SELECTORS, 1000);
+  if (directFileInput != null) {
+    return setFilesAndConfirm(
+      page,
+      uploadScope,
+      directFileInput,
+      resolved,
+      initialImageCount,
+    );
   }
 
   throw new Error("Could not upload image through any Facebook composer control");
@@ -423,6 +529,46 @@ async function ensurePostingIdentity(page, dialog) {
   return { mode: "page-selected", pageName };
 }
 
+async function prepareComposerForPublish(page, context, groupUrl) {
+  await ensureGroupPageReady(page, context, groupUrl);
+  logger.info({ groupUrl }, "Facebook group page ready for publishing");
+
+  const composer = await openComposerWithRecovery(page, context, groupUrl);
+  const publishDialog = page.locator('[role="dialog"]').first();
+  const dialogWasVisible = await isVisible(publishDialog);
+  const identityResult = await ensurePostingIdentity(page, dialogWasVisible ? publishDialog : page);
+  logger.info(
+    { groupUrl, identityMode: identityResult.mode, pageName: identityResult.pageName || null },
+    "Facebook publishing identity ready"
+  );
+
+  return { composer, publishDialog, dialogWasVisible, identityResult };
+}
+
+export async function primePostingIdentity(page, context, groupUrl) {
+  if (!groupUrl) {
+    throw new Error("groupUrl is required to prime Facebook posting identity");
+  }
+
+  const startedAt = Date.now();
+  const { identityResult } = await prepareComposerForPublish(page, context, groupUrl);
+  const screenshotPath = path.join(
+    config.artifactsDir,
+    `facebook-identity-ready-${Date.now()}.png`
+  );
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  await saveStorageState(context);
+
+  return {
+    ok: true,
+    groupUrl,
+    identityMode: identityResult.mode,
+    pageName: identityResult.pageName || null,
+    screenshotPath,
+    elapsedMs: Date.now() - startedAt,
+  };
+}
+
 async function ensureGroupPageReady(page, context, groupUrl) {
   const authResult = await ensureFacebookLogin(page, context, { targetUrl: groupUrl });
   logger.info({ authMode: authResult.mode, groupUrl }, "Opening Facebook group");
@@ -495,6 +641,122 @@ async function waitForPublishConfirmation(page, { dialog, postButton }) {
   throw new Error("Clicked Post but could not confirm that Facebook accepted the publish action");
 }
 
+async function findPublishedPostArticle(page, text) {
+  const snippet = preferredSnippet(text);
+  if (!snippet) {
+    throw new Error("Could not build a reliable text snippet to locate the published Facebook post");
+  }
+
+  const normalizedSnippet = snippet.toLowerCase();
+  const deadline = Date.now() + config.postLocateTimeoutMs;
+
+  while (Date.now() < deadline) {
+    const articles = page.locator('[role="article"]');
+    const count = Math.min(await articles.count(), 8);
+
+    for (let index = 0; index < count; index += 1) {
+      const article = articles.nth(index);
+      if (!(await isVisible(article))) {
+        continue;
+      }
+
+      const articleText = (await locatorText(article)).toLowerCase();
+      if (articleText.includes(normalizedSnippet)) {
+        return { article, snippet };
+      }
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  throw new Error(`Could not find the published Facebook post using snippet '${snippet}'`);
+}
+
+async function openCommentComposer(page, article) {
+  const commentButton = await firstVisibleLocator(
+    [
+      article.getByRole("button", { name: COMMENT_BUTTON_PATTERNS }).first(),
+      article.locator(
+        '[aria-label*="Comment"], [aria-label*="comment"], [aria-label*="תגובה"], [aria-label*="הגב"]'
+      ).first(),
+      article.getByText(COMMENT_BUTTON_PATTERNS).first(),
+    ],
+    2500
+  );
+
+  if (commentButton == null) {
+    throw new Error("Could not find the comment button on the published Facebook post");
+  }
+
+  await commentButton.click({ force: true });
+  await page.waitForTimeout(800);
+
+  const composer = await firstVisibleLocator(
+    [
+      article.locator('div[role="textbox"][contenteditable="true"]').last(),
+      page.locator('div[role="dialog"] div[role="textbox"][contenteditable="true"]').last(),
+      page.locator('div[contenteditable="true"][aria-label*="comment"]').last(),
+      page.locator('div[contenteditable="true"][aria-label*="Comment"]').last(),
+      page.locator('div[contenteditable="true"][aria-label*="תגובה"]').last(),
+    ],
+    4000
+  );
+
+  if (composer == null) {
+    throw new Error("Could not open the Facebook comment composer");
+  }
+
+  return composer;
+}
+
+async function waitForCommentConfirmation(page, article, commentText, composer) {
+  const snippet = preferredSnippet(
+    commentText
+      .split("\n")
+      .find((line) => line.includes("http")) || commentText
+  );
+  if (!snippet) {
+    return { confirmation: "comment-submitted-without-snippet" };
+  }
+
+  const normalizedSnippet = snippet.toLowerCase();
+  const deadline = Date.now() + config.commentConfirmTimeoutMs;
+
+  while (Date.now() < deadline) {
+    const articleText = (await locatorText(article)).toLowerCase();
+    if (articleText.includes(normalizedSnippet)) {
+      return { confirmation: "comment-visible", details: snippet };
+    }
+
+    try {
+      const composerText = await locatorText(composer);
+      if (!composerText) {
+        return { confirmation: "composer-cleared", details: snippet };
+      }
+    } catch {
+      return { confirmation: "composer-dismissed", details: snippet };
+    }
+
+    await page.waitForTimeout(400);
+  }
+
+  throw new Error(`Facebook comment submit was not confirmed for snippet '${snippet}'`);
+}
+
+async function publishCommentOnPost(page, text, commentText) {
+  const { article, snippet: postSnippet } = await findPublishedPostArticle(page, text);
+  const composer = await openCommentComposer(page, article);
+  await composer.fill(commentText);
+  await page.waitForTimeout(300);
+  await composer.press("Enter");
+  const commentConfirmation = await waitForCommentConfirmation(page, article, commentText, composer);
+
+  return {
+    postSnippet,
+    commentConfirmation,
+  };
+}
+
 export async function openAuthenticatedContext() {
   await ensureDir(config.artifactsDir);
 
@@ -512,6 +774,9 @@ export async function publishToFacebookGroup({
   text,
   imagePath = "",
   appendText = "",
+  commentText = "",
+  commentOnPost = false,
+  keepOpenMs = 0,
   dryRun = false,
 }) {
   if (!groupUrl) {
@@ -526,19 +791,22 @@ export async function publishToFacebookGroup({
   let imageUpload = imagePath ? "pending" : "not-requested";
 
   try {
-    await ensureGroupPageReady(page, context, groupUrl);
-    logger.info({ groupUrl, dryRun }, "Facebook group page ready for publishing");
-
-    const composer = await openComposerWithRecovery(page, context, groupUrl);
-    const publishDialog = page.locator('[role="dialog"]').first();
-    const dialogWasVisible = await isVisible(publishDialog);
-    const identityResult = await ensurePostingIdentity(page, dialogWasVisible ? publishDialog : page);
-    logger.info({ groupUrl, identityMode: identityResult.mode, pageName: identityResult.pageName || null }, "Facebook publishing identity ready");
+    const { composer, publishDialog, dialogWasVisible } = await prepareComposerForPublish(
+      page,
+      context,
+      groupUrl
+    );
+    logger.info({ groupUrl, dryRun }, "Facebook group page ready for publish submit");
     await composer.fill(text);
 
     if (imagePath) {
       try {
-        const uploadResult = await uploadImage(page, imagePath, publishDialog);
+        const uploadResult = await uploadImage(
+          page,
+          imagePath,
+          composer,
+          dialogWasVisible ? publishDialog : null,
+        );
         imageUpload = "uploaded";
         logger.info({ imagePath, uploadResult }, "Facebook image upload succeeded");
       } catch (error) {
@@ -593,6 +861,11 @@ export async function publishToFacebookGroup({
       dialog: dialogWasVisible ? publishDialog : null,
       postButton,
     });
+    let commentResult = null;
+    if (commentOnPost && commentText.trim()) {
+      await page.waitForTimeout(1500);
+      commentResult = await publishCommentOnPost(page, text, commentText);
+    }
     await saveStorageState(context);
 
     return {
@@ -601,6 +874,8 @@ export async function publishToFacebookGroup({
       imageUpload,
       screenshotPath,
       publishConfirmation: publishResult,
+      commentResult,
+      keepOpenMs,
       elapsedMs: Date.now() - startedAt,
     };
   } catch (error) {
@@ -616,6 +891,17 @@ export async function publishToFacebookGroup({
     logger.error({ err: error, errorPath }, "Facebook publish failed");
     throw error;
   } finally {
-    await browser.close();
+    if (keepOpenMs > 0) {
+      logger.info({ keepOpenMs }, "Keeping Facebook browser open for inspection");
+      setTimeout(async () => {
+        try {
+          await browser.close();
+        } catch {
+          // ignore delayed browser close errors
+        }
+      }, keepOpenMs);
+    } else {
+      await browser.close();
+    }
   }
 }

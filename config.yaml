@@ -20,6 +20,10 @@ marketing:
 
 tracking:
   base_url: "https://trk.dilim.net"
+  tracked_link_percentage_by_platform:
+    telegram: 100
+    whatsapp: 50
+    facebook: 50
 
 affiliate_orders:
   enabled: true
@@ -56,6 +60,7 @@ publishing:
       platform: "whatsapp"
       target: "120363406689019707@g.us"
       categories: ["tech", "toys", "other", "auto"]
+      min_publish_interval_minutes: 60
     wa_main:
       enabled: true
       platform: "whatsapp"
@@ -124,12 +129,6 @@ publishing:
       target: "https://www.facebook.com/groups/534710937121700"
       categories: ["*"]
       min_publish_interval_minutes: 240
-    fb_group_441237999359320:
-      enabled: true
-      platform: "facebook"
-      target: "https://www.facebook.com/groups/441237999359320"
-      categories: ["*"]
-      min_publish_interval_minutes: 240
     fb_group_434701246897267:
       enabled: true
       platform: "facebook"
@@ -162,10 +161,39 @@ quality:
   idle_priority_boost: 150
   source_reputation_enabled: true
   source_reputation_refresh_minutes: 60
+  source_reputation_lookback_days: 7
   source_reputation_min_links: 3
   source_reputation_max_rows: 5000
   source_reputation_boost_max: 12
   source_reputation_penalty_max: 18
+  disabled_sources:
+    - "@aliexpresszolisrael"
+    - "@DilimShavimA"
+  disabled_source_categories:
+    "@IsraelSmartBuy": ["fashion"]
+    "@aliexpressmuzarim": ["beauty", "fashion"]
+  source_score_adjustments:
+    "@https1_Onlineshopping": 5
+    "@DesignYourHomeWithAli": 3
+    "@IsraelSmartBuy": 3
+    "@OfficialKBT": 1
+  source_category_score_adjustments:
+    "@https1_Onlineshopping":
+      home: 3
+      toys: 5
+      beauty: 5
+      sports: 4
+    "@IsraelSmartBuy":
+      home: 4
+      tech: 3
+    "@DesignYourHomeWithAli":
+      home: 3
+      auto: 4
+    "@OfficialKBT":
+      home: 2
+      tech: -4
+    "@aliexpressmuzarim":
+      tech: 3
 
 dashboard:
   port: 8080
@@ -184,3 +212,4 @@ whatsapp:
 facebook:
   service_url: "http://localhost:3002"
   landing_page_url: "https://www.dilim.net/"
+  comment_links_as_comment: true

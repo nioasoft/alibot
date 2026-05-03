@@ -75,6 +75,7 @@ marketing:
     assert config.marketing.invite_links == []
     assert config.tracking.base_url == ""
     assert config.tracking.api_secret == ""
+    assert config.tracking.tracked_link_percentage_by_platform == {}
     assert config.affiliate_orders.enabled is True
     assert config.affiliate_orders.interval_minutes == 120
     assert config.affiliate_orders.lookback_days == 30
@@ -87,11 +88,17 @@ marketing:
     assert config.quality.idle_priority_boost == 150
     assert config.quality.source_reputation_enabled is True
     assert config.quality.source_reputation_refresh_minutes == 60
+    assert config.quality.source_reputation_lookback_days == 7
     assert config.quality.source_reputation_min_links == 3
     assert config.quality.source_reputation_max_rows == 5000
     assert config.quality.source_reputation_boost_max == 12
     assert config.quality.source_reputation_penalty_max == 18
+    assert config.quality.disabled_sources == []
+    assert config.quality.disabled_source_categories == {}
+    assert config.quality.source_score_adjustments == {}
+    assert config.quality.source_category_score_adjustments == {}
     assert config.facebook.service_url == "http://localhost:3002"
+    assert config.facebook.comment_links_as_comment is True
 
 
 def test_config_loads_env_vars(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -130,6 +137,9 @@ marketing:
   invite_links_path: "invite-links.json"
 tracking:
   base_url: "https://trk.dilim.net"
+  tracked_link_percentage_by_platform:
+    whatsapp: 50
+    facebook: 25
 affiliate_orders:
   enabled: true
   interval_minutes: 180
@@ -183,10 +193,20 @@ quality:
   idle_priority_boost: 222
   source_reputation_enabled: true
   source_reputation_refresh_minutes: 90
+  source_reputation_lookback_days: 5
   source_reputation_min_links: 5
   source_reputation_max_rows: 2000
   source_reputation_boost_max: 9
   source_reputation_penalty_max: 14
+  disabled_sources:
+    - "@weak"
+  disabled_source_categories:
+    "@mixed": ["fashion"]
+  source_score_adjustments:
+    "@strong": 5
+  source_category_score_adjustments:
+    "@mixed":
+      tech: 3
 """)
     from bot.config import load_config
 
@@ -201,6 +221,10 @@ quality:
     assert config.marketing.site_url == "https://www.dilim.net/"
     assert config.tracking.base_url == "https://trk.dilim.net"
     assert config.tracking.api_secret == "tracker-secret"
+    assert config.tracking.tracked_link_percentage_by_platform == {
+        "whatsapp": 50,
+        "facebook": 25,
+    }
     assert config.affiliate_orders.enabled is True
     assert config.affiliate_orders.interval_minutes == 180
     assert config.affiliate_orders.lookback_days == 14
@@ -226,11 +250,17 @@ quality:
     assert config.quality.idle_priority_boost == 222
     assert config.quality.source_reputation_enabled is True
     assert config.quality.source_reputation_refresh_minutes == 90
+    assert config.quality.source_reputation_lookback_days == 5
     assert config.quality.source_reputation_min_links == 5
     assert config.quality.source_reputation_max_rows == 2000
     assert config.quality.source_reputation_boost_max == 9
     assert config.quality.source_reputation_penalty_max == 14
+    assert config.quality.disabled_sources == ["@weak"]
+    assert config.quality.disabled_source_categories == {"@mixed": ["fashion"]}
+    assert config.quality.source_score_adjustments == {"@strong": 5}
+    assert config.quality.source_category_score_adjustments == {"@mixed": {"tech": 3}}
     assert config.facebook.landing_page_url == ""
+    assert config.facebook.comment_links_as_comment is True
 
 
 def test_config_preserves_numeric_telegram_source_groups(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -279,6 +309,51 @@ parser:
     assert config.telegram.source_groups == ["@g1", -5088840057]
     assert config.telegram.manual_source_groups == ["הכנסת דילים ידנית"]
     assert config.marketing.invite_links == []
+
+
+def test_config_loads_facebook_comment_links_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TELEGRAM_API_ID", "12345")
+    monkeypatch.setenv("TELEGRAM_API_HASH", "abc123")
+    monkeypatch.setenv("TELEGRAM_PHONE", "+972501234567")
+    monkeypatch.setenv("TELEGRAM_ADMIN_USER_ID", "99999")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-key")
+
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text("""
+telegram:
+  source_groups: ["@g1"]
+  manual_source_groups: []
+  admin_chat: "me"
+openai:
+  model: "gpt-4o-mini"
+publishing:
+  min_delay_seconds: 300
+  max_delay_seconds: 600
+  max_posts_per_hour: 4
+  quiet_hours_start: 23
+  quiet_hours_end: 7
+dashboard:
+  port: 8080
+  auto_refresh_seconds: 30
+dedup:
+  window_hours: 24
+  image_hash_threshold: 5
+watermark:
+  logo_path: "assets/logo.png"
+  position: "bottom-right"
+  opacity: 0.4
+  scale: 0.15
+parser:
+  min_message_length: 20
+  supported_domains: ["aliexpress.com"]
+facebook:
+  comment_links_as_comment: true
+""")
+    from bot.config import load_config
+
+    config = load_config(str(config_file))
+
+    assert config.facebook.comment_links_as_comment is True
 
 
 def test_config_missing_required_env_var(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

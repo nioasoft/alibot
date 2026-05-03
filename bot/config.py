@@ -51,6 +51,7 @@ class MarketingConfig:
 class TrackingConfig:
     base_url: str
     api_secret: str
+    tracked_link_percentage_by_platform: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -115,10 +116,15 @@ class QualityConfig:
     idle_priority_boost: int
     source_reputation_enabled: bool
     source_reputation_refresh_minutes: int
+    source_reputation_lookback_days: int
     source_reputation_min_links: int
     source_reputation_max_rows: int
     source_reputation_boost_max: int
     source_reputation_penalty_max: int
+    disabled_sources: list[str]
+    disabled_source_categories: dict[str, list[str]]
+    source_score_adjustments: dict[str, int]
+    source_category_score_adjustments: dict[str, dict[str, int]]
 
 
 @dataclass(frozen=True)
@@ -156,6 +162,7 @@ class WhatsAppConfig:
 class FacebookConfig:
     service_url: str
     landing_page_url: str
+    comment_links_as_comment: bool = True
 
 
 @dataclass(frozen=True)
@@ -339,9 +346,17 @@ def _load_marketing_config(raw: dict, config_dir: Path) -> MarketingConfig:
 
 def _load_tracking_config(raw: dict) -> TrackingConfig:
     tracking_raw = raw.get("tracking", {})
+    tracked_link_percentage_by_platform = {
+        str(platform).strip().lower(): max(0, min(100, int(percentage)))
+        for platform, percentage in tracking_raw.get(
+            "tracked_link_percentage_by_platform", {}
+        ).items()
+        if str(platform).strip()
+    }
     return TrackingConfig(
         base_url=str(tracking_raw.get("base_url", "")).strip().rstrip("/"),
         api_secret=_optional_env("TRACKING_API_SECRET").strip(),
+        tracked_link_percentage_by_platform=tracked_link_percentage_by_platform,
     )
 
 
@@ -356,10 +371,77 @@ def _load_affiliate_orders_config(raw: dict) -> AffiliateOrdersConfig:
     )
 
 
+def _normalize_config_key(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _load_quality_overrides(raw: dict) -> tuple[
+    list[str],
+    dict[str, list[str]],
+    dict[str, int],
+    dict[str, dict[str, int]],
+]:
+    quality_raw = raw.get("quality", {})
+
+    disabled_sources = [
+        normalized
+        for value in quality_raw.get("disabled_sources", [])
+        if (normalized := _normalize_config_key(value))
+    ]
+
+    disabled_source_categories: dict[str, list[str]] = {}
+    for source, categories in quality_raw.get("disabled_source_categories", {}).items():
+        normalized_source = _normalize_config_key(source)
+        if not normalized_source:
+            continue
+        normalized_categories = [
+            normalized
+            for value in categories
+            if (normalized := _normalize_config_key(value))
+        ]
+        if normalized_categories:
+            disabled_source_categories[normalized_source] = normalized_categories
+
+    source_score_adjustments = {
+        normalized_source: int(adjustment)
+        for source, adjustment in quality_raw.get("source_score_adjustments", {}).items()
+        if (normalized_source := _normalize_config_key(source))
+    }
+
+    source_category_score_adjustments: dict[str, dict[str, int]] = {}
+    for source, category_map in quality_raw.get(
+        "source_category_score_adjustments", {}
+    ).items():
+        normalized_source = _normalize_config_key(source)
+        if not normalized_source or not isinstance(category_map, dict):
+            continue
+        normalized_map = {
+            normalized_category: int(adjustment)
+            for category, adjustment in category_map.items()
+            if (normalized_category := _normalize_config_key(category))
+        }
+        if normalized_map:
+            source_category_score_adjustments[normalized_source] = normalized_map
+
+    return (
+        disabled_sources,
+        disabled_source_categories,
+        source_score_adjustments,
+        source_category_score_adjustments,
+    )
+
+
 def load_config(config_path: str) -> AppConfig:
     config_file = Path(config_path).resolve()
     with open(config_file, encoding="utf-8") as f:
         raw = yaml.safe_load(f)
+
+    (
+        disabled_sources,
+        disabled_source_categories,
+        source_score_adjustments,
+        source_category_score_adjustments,
+    ) = _load_quality_overrides(raw)
 
     return AppConfig(
         telegram=TelegramConfig(
@@ -427,6 +509,9 @@ def load_config(config_path: str) -> AppConfig:
             source_reputation_refresh_minutes=max(
                 15, int(raw.get("quality", {}).get("source_reputation_refresh_minutes", 60))
             ),
+            source_reputation_lookback_days=max(
+                1, int(raw.get("quality", {}).get("source_reputation_lookback_days", 7))
+            ),
             source_reputation_min_links=max(
                 1, int(raw.get("quality", {}).get("source_reputation_min_links", 3))
             ),
@@ -439,6 +524,10 @@ def load_config(config_path: str) -> AppConfig:
             source_reputation_penalty_max=max(
                 0, int(raw.get("quality", {}).get("source_reputation_penalty_max", 18))
             ),
+            disabled_sources=disabled_sources,
+            disabled_source_categories=disabled_source_categories,
+            source_score_adjustments=source_score_adjustments,
+            source_category_score_adjustments=source_category_score_adjustments,
         ),
         dashboard=DashboardConfig(
             port=raw["dashboard"]["port"],
@@ -452,6 +541,9 @@ def load_config(config_path: str) -> AppConfig:
         facebook=FacebookConfig(
             service_url=raw.get("facebook", {}).get("service_url", "http://localhost:3002"),
             landing_page_url=raw.get("facebook", {}).get("landing_page_url", ""),
+            comment_links_as_comment=bool(
+                raw.get("facebook", {}).get("comment_links_as_comment", True)
+            ),
         ),
         supabase=_load_supabase_config(),
     )

@@ -343,8 +343,32 @@ async function bottomComposerIconButtons(scope) {
   }
 
   return bottomButtons
-    .sort((a, b) => b.y - a.y || a.x - b.x)
+    .sort((a, b) => b.y - a.y || b.x - a.x)
     .map((entry) => entry.locator);
+}
+
+async function composerActionRowButtons(scope) {
+  const actionRowLabel = await firstVisibleLocator(
+    [
+      scope.getByText(/add to your post|הוספה לפוסט שלך/i).first(),
+      scope.getByText(/add to post|הוסף לפוסט|הוספה לפוסט/i).first(),
+    ],
+    1000
+  );
+
+  if (actionRowLabel == null) {
+    return [];
+  }
+
+  const actionRow = actionRowLabel.locator("xpath=ancestor::div[.//div[@role='button' or self::button]][1]");
+  try {
+    await actionRow.waitFor({ state: "visible", timeout: 1000 });
+  } catch {
+    return [];
+  }
+
+  const buttons = await actionRow.locator('div[role="button"], button').all();
+  return buttons.reverse();
 }
 
 async function uploadImage(page, imagePath, composer, dialog) {
@@ -376,10 +400,16 @@ async function uploadImage(page, imagePath, composer, dialog) {
     uploadScope.locator('[aria-label*="photo"], [aria-label*="image"], [aria-label*="video"], [aria-label*="תמונה"], [aria-label*="וידאו"]').first(),
   ];
 
+  const actionRowButtons = await composerActionRowButtons(uploadScope);
   const iconButtons = await bottomComposerIconButtons(uploadScope);
-  const buttonCandidates = [...uploadCandidates, ...iconButtons];
+  const buttonCandidates = [...uploadCandidates, ...actionRowButtons, ...iconButtons];
   logger.info(
-    { imagePath: resolved, candidateCount: buttonCandidates.length },
+    {
+      imagePath: resolved,
+      candidateCount: buttonCandidates.length,
+      actionRowCandidates: actionRowButtons.length,
+      iconCandidates: iconButtons.length,
+    },
     "Trying Facebook image upload controls within composer scope"
   );
 

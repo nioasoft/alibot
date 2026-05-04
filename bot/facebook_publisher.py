@@ -103,7 +103,7 @@ class FacebookPublisher:
         if self._comment_on_post:
             compact = self._build_compact_primary_text(deal)
             if compact:
-                return compact
+                return f"{compact}\n🛒 לרכישה: בתגובה הראשונה"
         return deal.rewritten_text
 
     def _build_link_text(self, deal: Deal, purchase_url: str | None = None) -> str:

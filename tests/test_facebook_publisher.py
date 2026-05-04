@@ -123,7 +123,7 @@ async def test_send_deal_moves_links_to_comment_payload_when_enabled() -> None:
 
     assert ok is True
     payload = route.calls[0].request.content.decode()
-    assert '"text":"rewritten\\nמחיר: ₪49.9"' in payload
+    assert '"text":"rewritten\\nמחיר: ₪49.9\\n🛒 לרכישה: בתגובה הראשונה"' in payload
     assert '"append_text":""' in payload
     assert '"comment_text":"🛒 קישור לרכישה: https://s.click.aliexpress.com/e/_sample"' in payload
     assert '"comment_on_post":true' in payload
@@ -153,5 +153,6 @@ async def test_send_deal_uses_compact_facebook_text_when_comment_mode_enabled() 
     assert 'קל לנשיאה, מתכוונן ומתאים לאימון בבית או בחוץ.' in payload
     assert 'מחיר: ₪17.05' in payload
     assert 'משלוח: חינם' in payload
+    assert 'לרכישה: בתגובה הראשונה' in payload
     assert '💰 מחיר: $5.72 (כ-₪17.05)' not in payload
     assert '🚚 משלוח חינם' not in payload

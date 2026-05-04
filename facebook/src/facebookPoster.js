@@ -480,26 +480,6 @@ async function waitForPreview(page) {
   await page.waitForTimeout(config.previewWaitMs);
 }
 
-async function selectIdentityCandidate(pageNamePattern, candidates) {
-  for (const candidate of candidates) {
-    try {
-      await candidate.waitFor({ state: "visible", timeout: 1500 });
-      await candidate.click({ force: true });
-      return true;
-    } catch {
-      // try next candidate
-    }
-  }
-
-  const directOption = page.getByText(pageNamePattern).first();
-  if (await isVisible(directOption)) {
-    await directOption.click({ force: true });
-    return true;
-  }
-
-  return false;
-}
-
 async function ensurePostingIdentity(page, dialog) {
   const pageName = config.postAsPageName?.trim();
   if (!pageName) {
@@ -511,52 +491,11 @@ async function ensurePostingIdentity(page, dialog) {
   if (await isVisible(selectedIdentity)) {
     return { mode: "page-already-selected", pageName };
   }
-
-  const identitySwitchers = [
-    dialog.getByRole("button", { name: /switch profile|switch identity|post as|choose identity|בחר|זהות|פרופיל|page|דף/i }).first(),
-    dialog.locator('[role="button"][aria-haspopup="menu"]').first(),
-    dialog.locator('[role="button"][aria-label*="switch"]').first(),
-    dialog.locator('[role="button"][aria-label*="profile"]').first(),
-    dialog.locator('[role="button"][aria-label*="identity"]').first(),
-    dialog.locator('[role="button"][aria-label*="דף"]').first(),
-    dialog.locator('[role="button"][aria-label*="פרופיל"]').first(),
-    dialog.locator('[role="button"]').filter({ has: dialog.getByText(/private group|public group|קבוצה פרטית|קבוצה ציבורית/i).first() }).first(),
-  ];
-
-  const opened = await selectIdentityCandidate(pageNamePattern, identitySwitchers);
-  if (!opened) {
-    throw new Error(`Configured Facebook page '${pageName}' was not selectable from the composer`);
-  }
-
-  const pageOptions = [
-    page.getByRole("menuitem", { name: pageNamePattern }).first(),
-    page.getByRole("button", { name: pageNamePattern }).first(),
-    page.getByText(pageNamePattern).first(),
-  ];
-
-  let selected = false;
-  for (const option of pageOptions) {
-    try {
-      await option.waitFor({ state: "visible", timeout: 3000 });
-      await option.click({ force: true });
-      selected = true;
-      break;
-    } catch {
-      // try next option
-    }
-  }
-
-  if (!selected) {
-    throw new Error(`Facebook page option '${pageName}' did not appear after opening the identity switcher`);
-  }
-
-  await page.waitForTimeout(1500);
-  const selectedAfterSwitch = dialog.getByText(pageNamePattern).first();
-  if (!(await isVisible(selectedAfterSwitch))) {
-    throw new Error(`Facebook composer did not confirm page identity '${pageName}' after selection`);
-  }
-
-  return { mode: "page-selected", pageName };
+  logger.info(
+    { pageName },
+    "Facebook page auto-switch disabled; using the identity already stored in the current session"
+  );
+  return { mode: "page-unverified-session", pageName };
 }
 
 async function prepareComposerForPublish(page, context, groupUrl) {
@@ -858,12 +797,10 @@ export async function publishToFacebookGroup({
     }
 
     if (appendText && appendText.trim()) {
-      const activeComposer = page.locator('[role="dialog"] div[contenteditable="true"]').first();
-      await activeComposer.waitFor({ state: "visible", timeout: 4000 });
       await waitForPreview(page);
-      await activeComposer.press("End");
+      await composer.press("End");
       await page.waitForTimeout(300);
-      await activeComposer.type(appendText, { delay: 15 });
+      await composer.type(appendText, { delay: 15 });
     }
 
     await waitForPreview(page);

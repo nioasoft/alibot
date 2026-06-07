@@ -260,12 +260,17 @@ class TestDownloadImage:
         mock_response = MagicMock()
         mock_response.content = b"img"
         mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
 
-        with patch("bot.hot_products.httpx.get", return_value=mock_response):
+        with patch("bot.hot_products.sync_client", return_value=mock_client):
             assert _download_image("https://example.com/image.jpg") == b"img"
 
     def test_returns_none_on_http_error(self):
         import httpx
 
-        with patch("bot.hot_products.httpx.get", side_effect=httpx.HTTPError("timeout")):
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.HTTPError("timeout")
+
+        with patch("bot.hot_products.sync_client", return_value=mock_client):
             assert _download_image("https://example.com/image.jpg") is None

@@ -25,6 +25,7 @@ from bot.exchange_rate import fetch_usd_ils_rate
 from bot.facebook_publisher import FacebookPublisher
 from bot.fork_debug import install_fork_debugging
 from bot.hot_products import HotProductFetcher
+from bot.http_client import close_sync_client
 from bot.image_processor import ImageProcessor
 from bot.listener import TelegramListener
 from bot.models import init_db
@@ -314,6 +315,13 @@ async def main():
     finally:
         await notifier.notify_shutdown()
         scheduler.shutdown()
+        # Close pooled HTTP clients so keep-alive connections are torn down cleanly.
+        for closeable in (resolver, whatsapp_publisher, facebook_publisher):
+            try:
+                await closeable.aclose()
+            except Exception:  # best-effort shutdown; never mask the real exit reason
+                pass
+        close_sync_client()
         session.close()
 
 

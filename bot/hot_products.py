@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +17,7 @@ from bot.affiliate_pool import AffiliateLinkPool
 from bot.aliexpress_client import extract_promo_codes, select_best_sale_price
 from bot.category_resolver import CategoryResolver
 from bot.exchange_rate import get_cached_rate
+from bot.http_client import sync_client
 from bot.image_processor import compute_image_hash
 from bot.models import Deal, PublishQueueItem, RawMessage
 from bot.quality import QualityGate
@@ -348,11 +348,10 @@ class HotProductFetcher:
 
 def _download_image(url: str) -> Optional[bytes]:
     try:
-        response = httpx.get(
+        response = sync_client().get(
             url,
             timeout=15.0,
             headers={"User-Agent": "Mozilla/5.0"},
-            follow_redirects=True,
         )
         response.raise_for_status()
         return response.content

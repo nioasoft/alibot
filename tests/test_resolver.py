@@ -80,3 +80,23 @@ class TestLinkResolver:
             product_id = await resolver.resolve(short_url)
 
         assert product_id is None
+
+    async def test_reuses_single_client_across_resolves(self, resolver: LinkResolver):
+        # Keep-alive: a fresh client per call would exhaust ephemeral ports at scale.
+        first = "https://www.aliexpress.com/item/1111111111.html"
+        second = "https://www.aliexpress.com/item/2222222222.html"
+
+        with respx.mock:
+            respx.get(first).mock(return_value=httpx.Response(200))
+            respx.get(second).mock(return_value=httpx.Response(200))
+            # direct links short-circuit, so force the redirect path
+            await resolver._follow_redirects(first)
+            client_after_first = resolver._client
+            await resolver._follow_redirects(second)
+            client_after_second = resolver._client
+
+        assert client_after_first is not None
+        assert client_after_first is client_after_second  # same pooled client reused
+
+        await resolver.aclose()
+        assert resolver._client.is_closed

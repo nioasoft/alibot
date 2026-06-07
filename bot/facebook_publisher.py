@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 from loguru import logger
 
+from bot.http_client import new_async_client
 from bot.models import Deal
 
 _STRUCTURED_PREFIXES = (
@@ -33,6 +34,16 @@ class FacebookPublisher:
         self._site_url = site_url.rstrip("/")
         self._comment_on_post = comment_on_post
         self._enabled = bool(service_url and site_url)
+        self._client: Optional[httpx.AsyncClient] = None
+
+    def _http(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = new_async_client(timeout=90.0)
+        return self._client
+
+    async def aclose(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
 
     @property
     def is_enabled(self) -> bool:
@@ -43,11 +54,10 @@ class FacebookPublisher:
             return False
 
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.get(f"{self._service_url}/health")
-                resp.raise_for_status()
-                data = resp.json()
-                return data.get("status") == "ok" and bool(data.get("authReady"))
+            resp = await self._http().get(f"{self._service_url}/health", timeout=5.0)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("status") == "ok" and bool(data.get("authReady"))
         except Exception:
             return False
 
@@ -158,24 +168,23 @@ class FacebookPublisher:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=90.0) as client:
-                resp = await client.post(f"{self._service_url}/publish", json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if data.get("imageUpload") == "failed":
-                        logger.warning(
-                            f"Facebook published deal {deal.id} without uploaded image; "
-                            f"falling back to link-only post"
-                        )
-                    if self._comment_on_post and data.get("commentResult"):
-                        logger.info(
-                            f"Facebook published deal {deal.id} with comment "
-                            f"{data['commentResult'].get('commentConfirmation', {}).get('confirmation', 'unknown')}"
-                        )
-                    return bool(data.get("ok"))
+            resp = await self._http().post(f"{self._service_url}/publish", json=payload)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("imageUpload") == "failed":
+                    logger.warning(
+                        f"Facebook published deal {deal.id} without uploaded image; "
+                        f"falling back to link-only post"
+                    )
+                if self._comment_on_post and data.get("commentResult"):
+                    logger.info(
+                        f"Facebook published deal {deal.id} with comment "
+                        f"{data['commentResult'].get('commentConfirmation', {}).get('confirmation', 'unknown')}"
+                    )
+                return bool(data.get("ok"))
 
-                logger.error(f"Facebook send failed: {resp.status_code} {resp.text}")
-                return False
+            logger.error(f"Facebook send failed: {resp.status_code} {resp.text}")
+            return False
         except httpx.ConnectError:
             logger.warning("Facebook service not running")
             return False

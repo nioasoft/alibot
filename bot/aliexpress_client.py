@@ -393,14 +393,13 @@ class AliExpressClient:
         Returns:
             Raw image bytes, or None if download failed.
         """
-        import httpx
+        from bot.http_client import sync_client
 
         try:
-            response = httpx.get(
+            response = sync_client().get(
                 image_url,
                 timeout=15.0,
                 headers={"User-Agent": "Mozilla/5.0"},
-                follow_redirects=True,
             )
             response.raise_for_status()
             return response.content

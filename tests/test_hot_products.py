@@ -93,10 +93,12 @@ def mock_image_processor(tmp_path) -> MagicMock:
 @pytest.fixture
 def fetcher(mock_ali_api, mock_rewriter, mock_image_processor, db_session, tmp_path) -> HotProductFetcher:
     router = MagicMock()
-    router.resolve.return_value = [
+    _destinations = [
         MagicMock(key="tg_tech", platform="telegram", target="@tech_channel"),
         MagicMock(key="wa_tech", platform="whatsapp", target="120@g.us"),
     ]
+    router.resolve.return_value = _destinations
+    router.resolve_with_rotation.return_value = _destinations
 
     category_resolver = MagicMock()
     category_resolver.resolve = AsyncMock(
@@ -260,12 +262,17 @@ class TestDownloadImage:
         mock_response = MagicMock()
         mock_response.content = b"img"
         mock_response.raise_for_status = MagicMock()
+        mock_client = MagicMock()
+        mock_client.get.return_value = mock_response
 
-        with patch("bot.hot_products.httpx.get", return_value=mock_response):
+        with patch("bot.hot_products.sync_client", return_value=mock_client):
             assert _download_image("https://example.com/image.jpg") == b"img"
 
     def test_returns_none_on_http_error(self):
         import httpx
 
-        with patch("bot.hot_products.httpx.get", side_effect=httpx.HTTPError("timeout")):
+        mock_client = MagicMock()
+        mock_client.get.side_effect = httpx.HTTPError("timeout")
+
+        with patch("bot.hot_products.sync_client", return_value=mock_client):
             assert _download_image("https://example.com/image.jpg") is None

@@ -8,7 +8,6 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from loguru import logger
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -18,8 +17,10 @@ from bot.affiliate_pool import AffiliateLinkPool
 from bot.aliexpress_client import extract_promo_codes, select_best_sale_price
 from bot.category_resolver import CategoryResolver
 from bot.exchange_rate import get_cached_rate
+from bot.http_client import sync_client
 from bot.image_processor import compute_image_hash
 from bot.models import Deal, PublishQueueItem, RawMessage
+from bot.publish_schedule import compute_scheduled_after
 from bot.quality import QualityGate
 from bot.rewriter import ContentRewriter
 from bot.router import DestinationRouter
@@ -95,6 +96,8 @@ class HotProductFetcher:
         affiliate_pool: AffiliateLinkPool | None,
         max_products_per_run: int = 3,
         quality_gate: QualityGate | None = None,
+        min_queue_delay_seconds: int = 0,
+        max_queue_delay_seconds: int = 0,
     ) -> None:
         self._api = ali_api
         self._rewriter = rewriter
@@ -105,6 +108,8 @@ class HotProductFetcher:
         self._affiliate_pool = affiliate_pool
         self._max_per_run = max_products_per_run
         self._quality_gate = quality_gate
+        self._min_queue_delay_seconds = min_queue_delay_seconds
+        self._max_queue_delay_seconds = max_queue_delay_seconds
 
     async def fetch_and_queue(self) -> int:
         if not self._api.is_enabled:
@@ -198,7 +203,7 @@ class HotProductFetcher:
             ali_category_raw=ali_category_raw,
         )
 
-        destinations = self._router.resolve(category_resolution.category)
+        destinations = self._router.resolve_with_rotation(category_resolution.category)
         if not destinations:
             logger.info(f"No destinations configured for hot product category {category_resolution.category}")
             return None
@@ -216,6 +221,9 @@ class HotProductFetcher:
                 has_image=bool(image_url),
                 category_source=category_resolution.source,
                 affiliate_link_ready=bool(affiliate_link),
+                product_name=title,
+                original_text=f"{title}\nOrders: {orders}\nDiscount: {discount}",
+                category=category_resolution.category,
                 idle_override=idle_override,
             )
             if not quality_decision.accepted:
@@ -307,6 +315,12 @@ class HotProductFetcher:
             deal.image_path = str(new_path)
 
         for destination in destinations:
+            scheduled_after = compute_scheduled_after(
+                session=self._session,
+                target_ref=destination.target,
+                min_delay_seconds=self._min_queue_delay_seconds,
+                max_delay_seconds=self._max_queue_delay_seconds,
+            )
             self._session.add(
                 PublishQueueItem(
                     deal_id=deal.id,
@@ -316,7 +330,7 @@ class HotProductFetcher:
                     target_ref=destination.target,
                     status="queued",
                     priority=quality_decision.priority if quality_decision else 0,
-                    scheduled_after=datetime.datetime.now(datetime.UTC),
+                    scheduled_after=scheduled_after,
                 )
             )
 
@@ -324,7 +338,8 @@ class HotProductFetcher:
 
         logger.info(
             f"Hot product queued: {title[:50]!r} "
-            f"(${sale_price}, category={category_resolution.category}, destinations={len(destinations)})"
+            f"(${sale_price}, category={category_resolution.category}, destinations={len(destinations)}, "
+            f"affiliate_account={affiliate_account_key or 'none'}, affiliate_ready={bool(affiliate_link)})"
         )
         return deal
 
@@ -348,11 +363,10 @@ class HotProductFetcher:
 
 def _download_image(url: str) -> Optional[bytes]:
     try:
-        response = httpx.get(
+        response = sync_client().get(
             url,
             timeout=15.0,
             headers={"User-Agent": "Mozilla/5.0"},
-            follow_redirects=True,
         )
         response.raise_for_status()
         return response.content

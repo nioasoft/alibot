@@ -20,6 +20,7 @@ from bot.exchange_rate import get_cached_rate
 from bot.image_processor import ImageProcessor, compute_image_hash
 from bot.models import DailyStat, Deal, PublishQueueItem, RawMessage
 from bot.parser import DealParser
+from bot.publish_schedule import compute_scheduled_after
 from bot.quality import QualityGate
 from bot.resolver import LinkResolver
 from bot.rewriter import ContentRewriter
@@ -64,6 +65,8 @@ class Pipeline:
         aliexpress_client: Optional[AliExpressClient] = None,
         affiliate_pool: Optional[AffiliateLinkPool] = None,
         quality_gate: Optional[QualityGate] = None,
+        min_queue_delay_seconds: int = 0,
+        max_queue_delay_seconds: int = 0,
     ):
         self._parser = parser
         self._dedup = dedup
@@ -78,6 +81,8 @@ class Pipeline:
         self._ali_client = aliexpress_client
         self._affiliate_pool = affiliate_pool
         self._quality_gate = quality_gate
+        self._min_queue_delay_seconds = min_queue_delay_seconds
+        self._max_queue_delay_seconds = max_queue_delay_seconds
 
     @staticmethod
     def _rewrite_source_context(
@@ -207,7 +212,7 @@ class Pipeline:
             ali_category_raw=ali_details.category if ali_details else None,
         )
 
-        destinations = self._router.resolve(category_resolution.category)
+        destinations = self._router.resolve_with_rotation(category_resolution.category)
         if not destinations:
             logger.info(f"No destinations configured for category {category_resolution.category}, skipping")
             return None
@@ -228,10 +233,13 @@ class Pipeline:
             )
             quality_decision = self._quality_gate.evaluate_pipeline(
                 source_group=source_group,
+                category=category_resolution.category,
                 ali_details=ali_details,
                 category_source=category_resolution.source,
                 affiliate_link_ready=bool(affiliate_link),
                 has_image=bool(images),
+                product_name=ali_details.title if ali_details else parsed.raw_text[:100],
+                original_text=text,
                 idle_override=idle_override,
             )
             if not quality_decision.accepted:
@@ -331,6 +339,12 @@ class Pipeline:
             deal.image_path = str(img_path)
 
         for destination in destinations:
+            scheduled_after = compute_scheduled_after(
+                session=self._session,
+                target_ref=destination.target,
+                min_delay_seconds=self._min_queue_delay_seconds,
+                max_delay_seconds=self._max_queue_delay_seconds,
+            )
             self._session.add(
                 PublishQueueItem(
                     deal_id=deal.id,
@@ -340,7 +354,7 @@ class Pipeline:
                     target_ref=destination.target,
                     status="queued",
                     priority=quality_decision.priority if quality_decision else 0,
-                    scheduled_after=datetime.datetime.now(datetime.UTC),
+                    scheduled_after=scheduled_after,
                 )
             )
 
@@ -349,7 +363,9 @@ class Pipeline:
         self._increment_stat("deals_processed")
         logger.info(
             f"Deal processed: {rewrite_result.product_name_clean} "
-            f"-> {category_resolution.category} -> {len(destinations)} destinations"
+            f"-> {category_resolution.category} -> {len(destinations)} destinations "
+            f"(affiliate_account={affiliate_account_key or 'none'}, "
+            f"affiliate_ready={bool(affiliate_link)})"
         )
 
         return deal

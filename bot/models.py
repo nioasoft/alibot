@@ -64,7 +64,7 @@ class PublishQueueItem(Base):
     destination_key: Mapped[str] = mapped_column(default="legacy_default")
     platform: Mapped[str] = mapped_column(default="telegram")
     target_ref: Mapped[str] = mapped_column(default="")
-    status: Mapped[str]  # queued / publishing / published / failed
+    status: Mapped[str]  # queued / publishing / published / failed / expired
     priority: Mapped[int] = mapped_column(default=0)
     scheduled_after: Mapped[datetime.datetime]
     published_at: Mapped[datetime.datetime | None]
@@ -132,6 +132,23 @@ class AffiliateClickEvent(Base):
         Index("idx_affiliate_click_events_token_id", "token_id"),
         Index("idx_affiliate_click_events_queue_item_id", "queue_item_id"),
     )
+
+
+class FacebookGroupState(Base):
+    """Per-group learned posting state for Facebook groups.
+
+    Tracks whether a group requires admin approval (so the purchase link must go
+    in the post body instead of a first comment) and the last posting identity
+    outcome, so the publisher can adapt and alert on regressions.
+    """
+
+    __tablename__ = "facebook_group_state"
+
+    group_url: Mapped[str] = mapped_column(primary_key=True)
+    approval_required: Mapped[bool] = mapped_column(default=False)
+    last_identity_mode: Mapped[str | None] = mapped_column(default=None)
+    posts_count: Mapped[int] = mapped_column(default=0)
+    updated_at: Mapped[datetime.datetime]
 
 
 def init_db(db_path: str) -> sessionmaker[Session]:

@@ -50,9 +50,11 @@ def pipeline_deps(db_session, tmp_path):
     image_proc = ImageProcessor(logo_path=str(logo_path))
 
     router = MagicMock()
-    router.resolve.return_value = [
+    _destinations = [
         MagicMock(key="tg_main", platform="telegram", target="@my_channel")
     ]
+    router.resolve.return_value = _destinations
+    router.resolve_with_rotation.return_value = _destinations
 
     category_resolver = MagicMock()
     category_resolver.resolve = AsyncMock(
@@ -128,6 +130,30 @@ class TestPipeline:
         assert queue.platform == "telegram"
         assert queue.destination_key == "tg_main"
         assert queue.priority == 82
+
+    async def test_pipeline_applies_queue_delay_window(self, pipeline_deps, db_session):
+        fresh_pipeline = Pipeline(
+            **pipeline_deps,
+            min_queue_delay_seconds=120,
+            max_queue_delay_seconds=120,
+        )
+
+        before = datetime.datetime.now(datetime.UTC)
+        await fresh_pipeline.process(
+            text="Amazing earbuds! https://s.click.aliexpress.com/e/_abc123 only ₪45 free shipping",
+            images=[_make_test_image()],
+            source_group="@deals_il",
+            telegram_message_id=555,
+        )
+        after = datetime.datetime.now(datetime.UTC)
+
+        queue = db_session.execute(select(PublishQueueItem)).scalar_one()
+        scheduled_after = queue.scheduled_after
+        if scheduled_after.tzinfo is None:
+            scheduled_after = scheduled_after.replace(tzinfo=datetime.UTC)
+        min_expected = before + datetime.timedelta(seconds=119)
+        max_expected = after + datetime.timedelta(seconds=121)
+        assert min_expected <= scheduled_after <= max_expected
 
     async def test_duplicate_deal_skips_publishing(self, pipeline: Pipeline, db_session):
         text = "Deal! https://s.click.aliexpress.com/e/_abc ₪45 great product"

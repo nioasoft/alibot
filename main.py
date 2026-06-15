@@ -25,6 +25,7 @@ from bot.exchange_rate import fetch_usd_ils_rate
 from bot.facebook_publisher import FacebookPublisher
 from bot.fork_debug import install_fork_debugging
 from bot.hot_products import HotProductFetcher
+from bot.http_client import close_sync_client
 from bot.image_processor import ImageProcessor
 from bot.listener import TelegramListener
 from bot.models import init_db
@@ -137,7 +138,7 @@ async def main():
         opacity=config.watermark.opacity,
         scale=config.watermark.scale,
     )
-    router = DestinationRouter(config.publishing.destinations or {})
+    router = DestinationRouter(config.publishing.destinations or {}, session=session)
     category_resolver = CategoryResolver(rewriter)
     quality_gate = QualityGate(
         manual_source_groups=config.telegram.manual_source_groups,
@@ -150,6 +151,19 @@ async def main():
         source_reputation_enabled=config.quality.source_reputation_enabled,
         source_reputation_boost_max=config.quality.source_reputation_boost_max,
         source_reputation_penalty_max=config.quality.source_reputation_penalty_max,
+        require_affiliate_link=config.quality.require_affiliate_link,
+        min_orders=config.quality.min_orders,
+        min_rating=config.quality.min_rating,
+        demand_override_min_orders=config.quality.demand_override_min_orders,
+        demand_override_min_score=config.quality.demand_override_min_score,
+        demand_boost_max=config.quality.demand_boost_max,
+        demand_penalty_max=config.quality.demand_penalty_max,
+        demand_positive_terms=config.quality.demand_positive_terms,
+        demand_negative_terms=config.quality.demand_negative_terms,
+        disabled_sources=config.quality.disabled_sources,
+        disabled_source_categories=config.quality.disabled_source_categories,
+        source_score_adjustments=config.quality.source_score_adjustments,
+        source_category_score_adjustments=config.quality.source_category_score_adjustments,
     )
     source_intelligence = None
     if config.supabase and config.quality.source_reputation_enabled:
@@ -158,6 +172,7 @@ async def main():
             key=config.supabase.service_key,
             max_rows=config.quality.source_reputation_max_rows,
             min_links=config.quality.source_reputation_min_links,
+            lookback_days=config.quality.source_reputation_lookback_days,
         )
         quality_gate.set_source_reputations(source_intelligence.refresh())
 
@@ -176,6 +191,8 @@ async def main():
         aliexpress_client=catalog_client,
         affiliate_pool=affiliate_pool,
         quality_gate=quality_gate,
+        min_queue_delay_seconds=config.publishing.min_delay_seconds,
+        max_queue_delay_seconds=config.publishing.max_delay_seconds,
     )
 
     telegram_publisher = TelegramPublisher(
@@ -189,6 +206,9 @@ async def main():
     facebook_publisher = FacebookPublisher(
         service_url=config.facebook.service_url,
         site_url=config.marketing.site_url,
+        comment_on_post=config.facebook.comment_links_as_comment,
+        session=session,
+        notify_func=send_to_admin,
     )
     if config.supabase:
         web_publisher = SupabasePublisher(
@@ -212,6 +232,7 @@ async def main():
         site_url=config.marketing.site_url,
         tracking_base_url=config.tracking.base_url,
         tracking_api_secret=config.tracking.api_secret,
+        tracked_link_percentage_by_platform=config.tracking.tracked_link_percentage_by_platform,
         invite_links=config.marketing.invite_links,
         destinations=config.publishing.destinations,
         weekend_reduced_rate_factor=config.publishing.weekend_reduced_rate_factor,
@@ -219,6 +240,7 @@ async def main():
         weekend_reduced_start_hour=config.publishing.weekend_reduced_start_hour,
         weekend_reduced_end_weekday=config.publishing.weekend_reduced_end_weekday,
         weekend_reduced_end_hour=config.publishing.weekend_reduced_end_hour,
+        queue_item_max_age_hours=config.publishing.queue_item_max_age_hours,
     )
 
     order_sync = None
@@ -258,6 +280,8 @@ async def main():
         affiliate_pool=affiliate_pool,
         max_products_per_run=config.publishing.hot_products_per_run,
         quality_gate=quality_gate,
+        min_queue_delay_seconds=config.publishing.min_delay_seconds,
+        max_queue_delay_seconds=config.publishing.max_delay_seconds,
     )
 
     scheduler = AsyncIOScheduler()
@@ -314,6 +338,13 @@ async def main():
     finally:
         await notifier.notify_shutdown()
         scheduler.shutdown()
+        # Close pooled HTTP clients so keep-alive connections are torn down cleanly.
+        for closeable in (resolver, whatsapp_publisher, facebook_publisher):
+            try:
+                await closeable.aclose()
+            except Exception:  # best-effort shutdown; never mask the real exit reason
+                pass
+        close_sync_client()
         session.close()
 
 

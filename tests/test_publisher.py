@@ -221,6 +221,25 @@ class TestRateLimit:
             "fb_beer_sheva_together",
         ) is True
 
+    def test_weekly_facebook_destination_blocks_early_repeat(self, publisher: DealPublisher, db_session):
+        target = "https://www.facebook.com/groups/134474320483279"
+        key = "fb_beer_sheva_134474320483279"
+        publisher._destinations[key] = DestinationConfig(
+            key=key, enabled=True, platform="facebook", target=target,
+            categories=["*"], min_publish_interval_minutes=7 * 24 * 60,
+        )
+        _, previous = _seed_deal(db_session, deal_id=151, platform="facebook", target_ref=target)
+        previous.destination_key = key
+        previous.status = "published"
+        reference_time = datetime.datetime.now(datetime.UTC)
+        previous.published_at = reference_time - datetime.timedelta(days=6)
+        db_session.commit()
+
+        assert publisher.is_rate_limited(target, key, now=reference_time) is True
+        assert publisher.is_rate_limited(
+            target, key, now=reference_time + datetime.timedelta(days=1, minutes=1)
+        ) is False
+
     def test_weekend_reduction_limits_non_facebook_to_thirty_percent(
         self, publisher: DealPublisher, db_session
     ):

@@ -1,6 +1,21 @@
 import pytest
 from pathlib import Path
 
+import yaml
+
+
+def test_beer_sheva_together_new_group_is_separate_and_weekly():
+    config_path = Path(__file__).resolve().parents[1] / "config.yaml"
+    destinations = yaml.safe_load(config_path.read_text())["publishing"]["destinations"]
+    new_group = destinations["fb_beer_sheva_134474320483279"]
+    existing_group = destinations["fb_beer_sheva_together"]
+
+    assert new_group["enabled"] is True
+    assert new_group["platform"] == "facebook"
+    assert new_group["target"] == "https://www.facebook.com/groups/134474320483279"
+    assert new_group["target"] != existing_group["target"]
+    assert new_group["min_publish_interval_minutes"] >= 7 * 24 * 60
+
 
 def test_load_config_from_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("TELEGRAM_API_ID", "1")

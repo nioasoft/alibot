@@ -102,7 +102,7 @@ publishing:
     # Separate, smaller "באר שבע ביחד" group; group rules cap a business to
     # one post per rolling seven days and require a visible price.
     fb_beer_sheva_134474320483279:
-      enabled: true
+      enabled: false  # Current identity opens Share, not a group post composer.
       platform: "facebook"
       target: "https://www.facebook.com/groups/134474320483279"
       categories: ["*"]

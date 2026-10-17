@@ -99,6 +99,14 @@ publishing:
       target: "https://www.facebook.com/share/g/14dDspWSykd/?mibextid=wwXIfr"
       categories: ["*"]
       min_publish_interval_minutes: 240
+    # Separate, smaller "באר שבע ביחד" group; group rules cap a business to
+    # one post per rolling seven days and require a visible price.
+    fb_beer_sheva_134474320483279:
+      enabled: true
+      platform: "facebook"
+      target: "https://www.facebook.com/groups/134474320483279"
+      categories: ["*"]
+      min_publish_interval_minutes: 10080
     fb_netivot_together:
       enabled: true
       platform: "facebook"

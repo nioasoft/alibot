@@ -10,7 +10,7 @@ def test_beer_sheva_together_new_group_is_separate_and_weekly():
     new_group = destinations["fb_beer_sheva_134474320483279"]
     existing_group = destinations["fb_beer_sheva_together"]
 
-    assert new_group["enabled"] is True
+    assert new_group["enabled"] is False  # Enable only after confirming the group composer works.
     assert new_group["platform"] == "facebook"
     assert new_group["target"] == "https://www.facebook.com/groups/134474320483279"
     assert new_group["target"] != existing_group["target"]
